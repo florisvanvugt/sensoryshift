@@ -17,7 +17,8 @@ from threading import Thread
 from aux import *
 
 #import robot.interface as robot
-robot = None
+import robot.dummy as robot
+#robot = None
 
 import subprocess
 
@@ -33,6 +34,7 @@ else: # python2
     from Tkinter import filedialog
 
 import json
+import pandas as pd
 
 
 # The little control window
@@ -97,7 +99,7 @@ conf['robot_center']= (0,-.05) # robot center position
 conf['arc_range']= (45,0)
 
 conf['arc_draw_segments'] = 100 # how many segments to draw the arc (higher=more precision but takes more resources)
-conf['arc_thickness']     = .005 # how thick to draw the 'selector' arc
+conf['arc_thickness']     = .001 # how thick to draw the 'selector' arc
 conf['arc_colour']        = (127,127,127)
 
 
@@ -112,6 +114,20 @@ conf['min_joystick']= 0
 
 
 
+# How long to take for the return movement
+conf['return_duration']=1.5 # seconds
+
+# How long to take for the passive movements
+conf['passive_duration']=1.5 # seconds
+
+
+
+
+
+# Data that is specific to this trial
+trialdata = {}
+
+
 
 
 
@@ -124,7 +140,12 @@ def conv_ang(a):
     
 
 
+def selector_position_from_angle(a):
+    cx,cy = conf['robot_center']
+    pos = (cx+conf['movement_radius']*np.cos(a),cy+conf['movement_radius']*np.sin(a))
+    return pos
 
+    
 
 def draw_arc_selector():
     """ Draw the arc on the screen along which the subjects can
@@ -151,9 +172,10 @@ def draw_arc_selector():
     pygame.draw.polygon( conf['screen'],conf['arc_colour'],poly)
 
     
-    if 'selector_position' in conf:
+    if 'selector_angle' in trialdata:
         #print(conf['selector_position'])
-        draw_ball(conf['screen'],conf['selector_position'],conf['selector_radius'],conf['selector_colour'])
+        pos = selector_position_from_angle(trialdata['selector_angle'])
+        draw_ball(conf['screen'],pos,conf['selector_radius'],conf['selector_colour'])
         
 
     
@@ -189,18 +211,21 @@ def draw_ball(surface,pos,radius,colour):
     
 def pinpoint():
     """ Select a position on the screen using the joystick."""
-
-    conf['redraw']=True
-    
     # Start the main loop
+    trialdata['redraw']=True
+    launch_mainloop()
+
+
+    
+def launch_mainloop():
     conf['thread']=Thread(target=mainloop)
     conf['thread'].start()
+    
+    
 
 
 
-
-
-def get_selector_position(pos):
+def get_selector_angle(pos):
     """ Map the joystick position to a position of a selector on the screen."""
 
     # Determine the joystick position on a range from 0 to 1
@@ -213,11 +238,8 @@ def get_selector_position(pos):
     # Ok, lovely! Now we can turn that into an angle
     mn,mx = conf['arc_range']
     a = conv_ang(mn+joyrel*(mx-mn))
-
-    cx,cy = conf['robot_center']
-    pos = (cx+conf['movement_radius']*np.cos(a),cy+conf['movement_radius']*np.sin(a))
+    return a
     
-    return pos
      
 
     
@@ -226,44 +248,136 @@ def get_joystick():
     """ Get the current position of the joystick."""
     joystick = conf['joystick']
     pos = [ joystick.get_axis( i ) for i in range(2) ] # get the first two axes
-    if len(conf['joystick_history'])==0 or pos!=conf['joystick_history'][-1]:
-        conf['joystick_history'].append(pos) # TODO: make sure we clear the joystick history also!
-    conf['selector_position']=get_selector_position(pos) # update the selector position
+    if 'joystick_history' in trialdata:
+        if len(trialdata['joystick_history'])==0 or pos!=trialdata['joystick_history'][-1]:
+            trialdata['joystick_history'].append(pos) # TODO: make sure we clear the joystick history also!
+    trialdata['selector_angle']=get_selector_angle(pos) # update the selector position
     return pos
+    
+
+
+
+
+def current_schedule():
+    # Return the item that is currently scheduled
+    if 'current_schedule' not in trialdata or trialdata['current_schedule']==-1: return None
+    return trialdata['schedule'][trialdata['current_schedule']]
+
+
+def phase_is(p):
+    # Return whether the current phase is p
+    return trialdata.get('phase',None)==p
+
+def phase_in(phases):
+    # Return whether the current phase is p
+    return trialdata.get('phase',None)in phases
+
+
+
+
+def start_new_trial():
+    """ Initiate a new trial. """
+    if trialdata['current_schedule']==len(trialdata['schedule'])-1:
+        # Done the experiment!
+        print("## BLOCK COMPLETED ##")
+        robot.stay() # just fix the handle wherever it is
+        print("Experiment schedule completed.")
+        next_phase('completed')
+        gui['keep_going'] = False # this will bail out of the main loop
+        # Now ask the experimenter for observations
+        obsv = tkSimpleDialog.askstring('Please record any observations', 'Experimenter, please write down any observations.\nAny irregularities?\nDid the subject seem concentrated or not?\nWere things unclear or clear?\nAnything else that is worth noting?')
+        with open(conf['obsvlog'],'w') as f:
+            f.write(obsv)
+
+        tkMessageBox.showinfo("Robot", "Block completed! Yay!")
+        time.sleep(1) # wait until some last commands may have stopped
+        close_logs()
+        update_ui()
+        return
+
+
+    # Okay, if that wasn't the case, we can safely start our new trial
+    trialdata['current_schedule']+=1
+
+    sched = current_schedule() # Retrieve the current schedule
+    trialdata['trial']           =sched['trial'] # trial number
+    trialdata['type']            =sched['type']
+    trialdata['mov.direction']   =sched['mov.direction']
+    trialdata['visual.rotation'] =sched['visual.rotation']
+
+
+    ## Return the robot to the center
+    sx,sy = conf['robot_center']
+    robot.move_to(sx,sy,conf['return_duration'])
+    next_phase('return') # return to the starting point to start the trial
+    
+    
     
 
 
 def mainloop():
 
-    conf['keep_going']=True # be an optimist!
+    gui['running']=True
+    gui['keep_going']=True # be an optimist!
+    trialdata['redraw']=True
+    trialdata['first.t']=time.time()
     pygame.event.clear() # Make sure there is no previous events in the pipeline
 
-    while conf['keep_going']:
+    while gui['keep_going']:
 
-        time.sleep(.001) # wait a little bit
+        time.sleep(.0005) # add a little breath
+        trialdata["t.absolute"] = time.time()
+        trialdata["t.current"] = trialdata["t.absolute"]-trialdata['first.t']
 
-        # Flush the time
-        t = time.time()
+        # Read the current position
+        trialdata['robot_x'],trialdata['robot_y'] = robot.rshm('x'),robot.rshm('y')
 
-        # Wait for the next event
+        if phase_is('init'):
+            # Start a new trial
+            start_new_trial()
+
+        if phase_is('return'):
+            if robot.move_is_done():
+                next_phase('something')
+            
+        
+        # Get any waiting events (joystick, but maybe other events as well)
         evs = pygame.event.get()
-
         for ev in evs:
-
             if ev.type==pygame.JOYAXISMOTION:
-                conf['joystick.pos']=get_joystick() # update the joystick position
-                conf['redraw']=True
+                trialdata['joystick.pos']=get_joystick() # update the joystick position
+                trialdata['redraw']=True
 
-        if conf['redraw']:
-            draw_arc_selector()
-            draw_ball(conf['screen'],conf['robot_center'],.01,(255,0,0))
+        # Possibly update the display
+        if trialdata['redraw']:
+
+            conf['screen'].fill(conf['bgcolor'])
+            if phase_is('select'):
+                draw_arc_selector()
+                draw_ball(conf['screen'],conf['robot_center'],.01,(255,0,0))
+
+            if phase_in(['return']):
+                draw_ball(conf['screen'],(trialdata['robot_x'],trialdata['robot_y']),conf['cursor_radius'],conf['cursor_colour'])
             pygame.display.flip()
 
+            
     print("Bailed out of main loop.")
+    gui['running']=False
     
 
 
+    
 
+
+def next_phase(p):
+    """ Set the current phase to a given value. """
+    print(p)
+    trialdata['phase']=p
+
+    # Track the start of this phase
+    k = trialdata.get('t.phase',{})
+    k[p]=time.time()
+    trialdata['t.phase']=k
 
 
 
@@ -279,10 +393,16 @@ def mainloop():
 
 
 
-def init_logs(conf):
+def init_logs():
     #logfile = open("data/exampledata.txt",'w')
+
+    basedir = './data/%s'%conf['participant']
+    if not os.path.exists(basedir):
+        os.makedirs(basedir)
+    
     timestamp = datetime.datetime.now().strftime("%d_%m.%Hh%Mm%S")
-    basename = './data/%s_%s_%s_'%(conf['participant'],EXPERIMENT,timestamp)
+    basename = '%s/%s_%s_%s'%(basedir,conf['participant'],EXPERIMENT,timestamp)
+        
     trajlog = '%strajectory.bin'%basename
     robot.start_log(trajlog,N_ROBOT_LOG)
     gui["logging"]=True
@@ -291,26 +411,19 @@ def init_logs(conf):
     capturelog = '%scaptured.pickle27'%basename
     ##trajlog.write('participant experiment trial x y dx dy t t.absolute\n')
 
-                
-    triallog = open('%strials.txt'%basename,'w')
-    triallog.write('participant experiment trial rotation target.x target.y t.go t.movestart t.target.enter t.trial.end timing timing.numeric duration\n')
+    triallog = open('%strials.json'%basename,'w')
 
-
+    ## Also dump the configuration parameters, this will make it easier to debug in the future
     conflog = open('%sparameters.json'%basename,'w')
-    #conflog.write('parameter;value\n')
     params = {}
-    for key,value in [ ('participant',  conf['participant']),
-                       ('schedulefile', conf['schedulefile']),
-                       ('calib',        conf['calib']),
-                       ('fullscreen',   conf['fullscreen']),
-    ]:
-        params[key]=value #.append((str(key),str(value)))
     for key in sorted(conf):
-        params[key]=conf[key]
+        if key not in ['joystick','screen']: # don't dump that stuff
+            params[key]=conf[key]
+    params['schedule']=trialdata['schedule']
     json.dump(params,conflog)
     conflog.close()
 
-
+    conf['obsvlog']     = '%sobservations.txt'%basename # where we will write the experimenter observations
 
     conf['trajlog']     = trajlog
     conf['triallog']    = triallog
@@ -321,43 +434,6 @@ def init_logs(conf):
 
 
 
-
-def trajlog(trialdata,position):
-    # Write the trajectory to file. Actually here we log all mouse events, even those that
-    # do not cause a change in cursor position (such as those occurring during "null" trial
-    # time).
-
-    (x,y) = trialdata["cursor.position"]
-    t          = trialdata["t.current"]
-
-    if not np.isnan(x) and not np.isnan(y):
-        if trialdata["phase"]=="active":
-            trialdata["position.history"].append((x,y,t))
-
-    
-
-
-
-def triallog(trialdata):
-    (tx,ty) = trialdata["target.position"]
-
-    conf['triallog'].write( writeln( [
-        (conf['participant'],            's'),
-        (trialdata["experiment"],           's'),
-        (trialdata["trial.number"],         'i'),
-        (tx,'f'),(ty,'f'),
-        (trialdata["t.go"],                 'f'),
-        (trialdata["t.movestart"],          'f'),
-        (trialdata["t.target.enter"],       'f'),
-        (trialdata["t.trial.end"],          'f'),
-        (trialdata["timing"],               's'),
-        (timing_number[trialdata["timing"]],'i'),
-        (trialdata["duration"],             'f'),
-        ]))
-
-    conf['triallog'].flush()
-
-
 def close_logs():
     if gui["logging"]:
         conf['triallog'].close()
@@ -366,22 +442,29 @@ def close_logs():
 
 
 
+
     
 
 def read_schedule_file():
-    """ Read a schedule file which tells us the parameters of each trial."""
+    """ 
+    Read a schedule file which tells us the parameters of each trial.
+    """
 
     print("Reading trial schedule file %s"%conf['schedulefile'])
 
-    schedule = pd.read_csv(conf['schedulefile'],sep=' ')
-
+    s = pd.read_csv(conf['schedulefile'],sep=' ')
     for c in ['trial','type','mov.direction','visual.rotation']:
-        if not c in schedule.columns:
+        if not c in s.columns:
             print("## ERROR: missing column %s in schedule."%c)
-    
-    conf['schedule'] = schedule
+
+    # I don't trust pandas so I prefer a simple data structure, list of dicts            
+    schedule = []
+    for i,row in s.iterrows():
+        schedule.append(dict(row))
+
+    trialdata['schedule'] = schedule
     #experiment.ntrials = len([ tr for tr in trials if tr["type"]=="arctrace" ])
-    print("Finished reading %i trials"%(conf['schedule'].shape[0]))
+    print("Finished reading %i trials"%(len(trialdata['schedule'])))
 
 
     
@@ -409,8 +492,8 @@ def load_robot():
     """ Launches the robot process. """
     global gui
     tkMessageBox.showinfo("Robot", "We will now load the robot.\n\nLook at the terminal because you may have to enter your sudo password there.")
-    robot.load()
 
+    robot.launch() # launches the robot C++ script
     # Then do zero FT
     tkMessageBox.showinfo("Robot", "Now we will zero the force transducers.\nAsk the subject to let go of the handle." )
     robot.zeroft()
@@ -422,19 +505,21 @@ def load_robot():
 
 
 
-    
-def end_program():
-    """ When the user presses the quit button. """
 
-    conf['keep_going'] = False
+
+def stop_running():
+    gui['keep_going'] = False # this will bail out of the main loop
     time.sleep(1) # wait until some last commands may have stopped
-
     close_logs()
-    
     if gui['loaded']:
         robot.unload()
         gui["loaded"]=False
         
+
+    
+def end_program():
+    """ When the user presses the quit button. """
+    stop_running()
     ending()
     sys.exit(0)
 
@@ -458,7 +543,7 @@ def run():
     if participant=="":
         tkMessageBox.showinfo("Error", "You need to enter a participant ID.")
         return
-    experiment.participant = participant
+    conf['participant'] = participant
 
     
     schedulefile=gui["schedulef"].get().strip()
@@ -468,234 +553,22 @@ def run():
     if not os.path.exists(schedulefile):
         tkMessageBox.showinfo("Error", "The schedule file name you entered does not exist.")
         return
-    experiment.schedulefile = schedulefile
-
-    experiment.visualfb = gui["visualfb"].get()!=0
-
-    experiment.calib = conf["calib"]
-    
-    read_schedule_file(experiment)
-
-
-
-    init_logs(experiment,conf)
-    experiment.inputs = robot 
-
-
-
-    trialdata = {"trial.number"    :0,
-                 "experiment"      :EXPERIMENT,
-                 "direction"       :"left",
-                 "phase"           :"null",
-                 "cursor.position" :(np.nan,np.nan),
-                 "t.start"         :np.nan,
-                 "t.trial.finish"  :-np.inf,
-                 "target.position" :conf["RIGHT_ARC_ORIGIN"],
-                 "start.position"  :conf["LEFT_ARC_ORIGIN"]}
-
-
-    ##center_trackball(experiment)
-    # This means we are still waiting for the first trigger
-    conf['current_schedule'] = 0 # this is a pointer to where we are in the schedule. if zero, it means we haven't yet received the first trigger
-    draw_positions(experiment,trialdata)
-    pygame.display.flip()
+    conf['schedulefile'] = schedulefile
 
     
-    experiment.keep_going = True
-    while experiment.keep_going:
+    read_schedule_file()
 
-        # Keep track of whether we will want to redraw
-        redraw = False
+    trialdata['participant'] =conf['participant']
+    trialdata['schedulefile']=conf['schedulefile']
+    init_logs()
 
-        trialdata["t.absolute"] = time.time()
+    trialdata['current_schedule']=-1 # start at the beginning
+    trialdata['phase']='init'
+    
+    launch_mainloop()
 
-        # Get the current time (coded in seconds but with floating point precision)
-        trialdata["t.current"] = trialdata["t.absolute"]-experiment.first_trigger_t()
-
-
-
-        if trialdata["t.current"]>=trialdata["t.trial.finish"]: # this is where the trial should end
-
-            # First of all, are we currently in the middle of a trial? Then we have to abort it.
-            if trialdata["phase"]=="active":
-
-                print("Forcing trial end.")
-                
-                print("Aborting trial because this takes too long.")
-                redraw = True
-                
-                trialdata["t.target.enter"]       = np.nan
-                trialdata["t.trial.end"]          = trialdata["t.current"]
-                trialdata["duration"]             = np.nan
-                trialdata["timing"]               = "incomplete.trial"
-
-                trialdata["phase"]="feedback"
-                trialdata["show.feedback.until.t"] = trialdata["t.current"]+conf["FINAL_POSITION_SHOW_TIME"]
-
-                robot.stay() # stop the subject in their tracks
-                finish_trial(experiment,trialdata)
-
-
-
-
-        # Is it time to start holding the robot at the center?
-        if trialdata['phase']=='return' and trialdata['t.current']>trialdata['t.stay']:
-            trialdata['phase']='stay'
-            x,y=trialdata['start.position']
-            print("Staying fading at %f,%f"%(x,y))
-            robot.stay_fade(x,y)
-
-        elif trialdata['phase']=='stay' and trialdata['t.current']>trialdata['t.go']:
-            print("Go!")
-            trialdata['phase']='active' # go! start showing the cursor and let's move
-
-            robot.wshm('fvv_trial_phase',4) # go signal is there, but subject has not necessarily started moving
-            robot.move_phase_and_capture()
-            #robot.start_capture()
-            redraw = True # because if no visual fb, we should at least show the cursor
-                    
-
-        # If the feedback show time has completed...
-        if trialdata["phase"]=="feedback" and trialdata["t.current"]>=trialdata.get("show.feedback.until.t",np.inf):
-            # We have completed showing feedback
-            print("Completed feedback show time.")
-            trialdata["phase"]="null"
-            redraw = True
-
-
-
-        if trialdata['phase']=='null' and trialdata["t.current"]>=trialdata["t.trial.finish"]:
-            # Start a new trial (or stop if there is nothing more to be done)
-            trialdata = start_new_trial(experiment,trialdata)
-            
-            # Advance the schedule
-            experiment.current_schedule += 1
-                
-            redraw = True
-
-
-
-
-
-        # Get current position from the robot
-        pos = robot.rshm('x'),robot.rshm('y')
-        #print(pos)
-        if True:
-            # If we are in the "go" phase, start allowing cursor movement
-            # If we are not, simply discard 
-            if trialdata["phase"]=="active": #and trialdata["t.current"]>trialdata["t.start"]+trialdata["t.go"]:
-                update_position(trialdata,pos,conf)
-            trajlog(experiment,trialdata,pos)
-            redraw = True
-
-
-
-
-
-        if trialdata["phase"]=="active":
-            # Decide whether we have reached the outside of the circle; if so, trial ends
-            dfromcenter = np.sqrt(sum((np.array(trialdata["cursor.position"])-np.array(trialdata["cursor.start"]))**2))
-
-            dtotarget = np.sqrt(sum((np.array(trialdata["cursor.position"])-np.array(trialdata["target.position"]))**2))
-            # Determine whether we are inside the target area.
-            # In the following, we set the in_target variable to TRUE if we are in the target area for this particular
-            # experiment.
-
-            # Determine the distance to the target; if they are close enough, flag that they have entered the target
-            in_target = dtotarget<conf["TARGET_AREA"]
-
-
-            if dfromcenter>conf["MOVE_START_RADIUS"]:
-                # If we have moved far enough from the center to consider that the shooting movement has started.
-                if trialdata["t.movestart"]==None:
-
-                    # Movement has started
-                    trialdata["t.movestart"] = trialdata["t.current"]
-                    redraw = True
-
-                    robot.wshm('fvv_trial_phase',5) # signal that we could start watching the velocity
-
-
-
-
-                if experiment.visualfb:
-                    if in_target:
-                        if trialdata["t.target.enter"]==None:
-                            trialdata["t.target.enter"]=trialdata["t.current"]
-                        else:
-                            if trialdata["t.current"]-trialdata["t.target.enter"] > conf["IN_TARGET_TIME"]:
-
-                                ##### Trial ending
-                                decide_timing(trialdata)
-
-                                if True:
-                                    trialdata["phase"]="feedback"
-                                    trialdata["show.feedback.until.t"] = trialdata["t.current"]+conf["FINAL_POSITION_SHOW_TIME"]
-
-                                    redraw = True
-
-
-                                ### Wrap up the rest of the trial
-                                robot.stay()
-                                finish_trial(experiment,trialdata)
-
-
-                    else:
-                        # If we are outside of the target, we need to reset the target enter time
-                        trialdata["t.target.enter"]=None
-
-
-                else: # if we are not in visual feedback mode
-
-                    # Here the logic is different, we wait for the robot to signal
-                    # to us that the trial should end because the subject
-                    # velocity is below a certain amount.
-
-                    if robot.rshm('fvv_trial_phase')==6:
-
-                        robot.stay()
-                        robot.wshm('fvv_trial_phase',7) # mark that this trial is completed.
-                        print("no-visual mode: trial end signaled.")
-
-                        ##### Trial ending
-                        decide_timing(trialdata)
-
-                        trialdata["phase"]="feedback"
-                        trialdata["show.feedback.until.t"] = trialdata["t.current"]+conf["FINAL_POSITION_SHOW_TIME"]
-                        
-                        redraw = True
-                            
-                        ### Wrap up the rest of the trial
-                        finish_trial(experiment,trialdata)
-                    
- 
-
-        if redraw:
-            # Update the positions on the screen
-            draw_positions(experiment,trialdata)
-            pygame.display.flip()
-
-            if trialdata['phase']=='feedback' and not trialdata['saved']:
-                # Save to a file too
-                if True:
-                    print("Saving to file")
-                    pygame.image.save(experiment.screen,'screenshot.bmp')
-                    subprocess.call(['convert','screenshot.bmp',
-                                     #'-crop','800x500+600+200',
-                                     '-flip','-resize','400x250','screenshot.gif'])
-                    trialdata['saved']=True
-
-                    gui["photo"]=PhotoImage(file='screenshot.gif')
-                    gui["photolabel"].configure(image=gui["photo"])
-
-
-        master.update_idletasks()
-        master.update()
-
-    gui["running"]=False
 
     
-
 
 def select_schedule():
     """ Show a dialog that lets the user select a file. """

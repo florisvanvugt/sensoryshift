@@ -16,6 +16,17 @@ Run `screencalib.py` to ensure the mapping between robot positions and the scree
 
 
 
+# Control flow within the experiment
+
+Every block starts in `init`.
+
+  * Passive trials `init -> return -> forward -> backward`
+  * Pinpoint trials `init -> return -> `
+  * Active trials `init -> return > `
+
+
+
+
 # TODO
 - [ ] Robot binary log
 - [ ] Record handle forces
