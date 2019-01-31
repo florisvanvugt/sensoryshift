@@ -11,6 +11,8 @@ import random
 import datetime
 
 import scipy
+    
+from threading import Thread
 
 from aux import *
 
@@ -23,16 +25,18 @@ PYTHON3 = (sys.version_info > (3, 0))
 if PYTHON3:
     from tkinter import *
     from tkinter import messagebox as tkMessageBox
+    from tkinter import filedialog
 
 else: # python2
     from Tkinter import * # use for python2
     import tkMessageBox
+    from Tkinter import filedialog
 
 import json
 
 
 # The little control window
-CONTROL_WIDTH,CONTROL_HEIGHT= 500,500 #1000,800 #450,400 # control window dimensions
+CONTROL_WIDTH,CONTROL_HEIGHT= 500,550 #1000,800 #450,400 # control window dimensions
 CONTROL_X,CONTROL_Y = 500,50 # controls where on the screen the control window appears
 
 
@@ -53,20 +57,11 @@ conf = {}
 conf['fullscreen']=False
 
 # The background of the screen
-conf["BGCOLOR"] = (0,0,0)
+conf["bgcolor"] = (0,0,0)
 
 # The size of the window (for pygame)
-#displaySize = (1280,720)  # for 16:9 screens
-#conf["SCREENSIZE"] = (1024,768)  # for 16:10 screens (e.g. Mac)
-conf["SCREENSIZE"] = (1920,1080) # inmotion screen
-conf["SCREENPOS"] = (1600,0) # the offset (allows you to place the subject screen "on" the second monitor)
-
-# The size of the active screen area for the experiment (in pixels)
-conf["MAXX"],conf["MAXY"] = conf["SCREENSIZE"]
-
-# The center of the screen
-conf["CENTERX"],conf["CENTERY"] = conf["MAXX"]/2,conf["MAXY"]/2
-
+conf["screensize"] = (1920,1080) # inmotion screen
+conf["screenpos"] = (1600,0) # the offset (allows you to place the subject screen "on" the second monitor)
 
 
 
@@ -81,15 +76,195 @@ _,conf["calib"] = json.load(open(conf['calibfile'],'r')) #, encoding='latin1') i
 
 
 # The sizes of various objects
-conf["CURSOR_RADIUS"] = .002 # in robot coordinates (m)
+conf["cursor_radius"] = .005 # in robot coordinates (m)
 
 # this is the display size of the target, not the size of the target area used for determining whether subjects are long enough "within" the target.
-#TARGET_SIZE = 10 # for Stewart Bio
-conf["TARGET_RADIUS"] = .002
-
+conf["target_radius"] = .005
 
 # The cursor colour
-conf["CURSOR_COLOUR"] = (255,255,255)
+conf["cursor_colour"] = (255,255,255)
+
+
+# The radius of the movement
+conf['movement_radius']=.15 # meters
+
+conf['robot_center']= (0,-.05) # robot center position
+
+
+# The extent of the arc being displayed on the screen when the
+# subject selects the placement of the hand
+# This is in angles, degrees, with 0 = straight ahead, and positive angles are counterclockwise
+conf['arc_range']= (45,0)
+
+conf['arc_draw_segments'] = 100 # how many segments to draw the arc (higher=more precision but takes more resources)
+conf['arc_thickness']     = .005 # how thick to draw the 'selector' arc
+conf['arc_colour']        = (127,127,127)
+
+
+conf['selector_radius']=.005 # the radius of the selector ball that is controlled by the joystick
+conf['selector_colour']=(0,0,255)
+
+
+# Range of the joystick values
+# anything outside this range is snapped to the edges
+conf['max_joystick']= 1
+conf['min_joystick']= 0
+
+
+
+
+
+
+def conv_ang(a):
+    """ Angles in this experiment are generally given in degrees
+    w.r.t. straight ahead, just because that's simpler.
+    But then sin and cos like to have them in radians, relative
+    to straight right. So here we do that translation."""
+    return ((a+90)/180)*np.pi
+    
+
+
+
+
+def draw_arc_selector():
+    """ Draw the arc on the screen along which the subjects can
+    choose the felt position of the hand."""
+
+    conf['screen'].fill(conf['bgcolor'])
+
+    mna,mxa = conf['arc_range']
+    minang,maxang = conv_ang(mna),conv_ang(mxa) # convert into usable angles
+    angs = np.linspace(minang,maxang,conf['arc_draw_segments'])
+
+    # Now make an inner and outer arc
+    cx,cy = conf['robot_center']
+    points = []
+    for sgn in [-.5,.5]:
+        rad = conf['movement_radius']-sgn*conf['arc_thickness']
+        p = [ (cx+rad*np.cos(a),cy+rad*np.sin(a)) for a in angs ]
+        if sgn<0: p.reverse()
+        points += p
+
+
+    # And then plot a polygon!
+    poly = [ robot_to_screen(ry,rz,conf) for (ry,rz) in points ]
+    pygame.draw.polygon( conf['screen'],conf['arc_colour'],poly)
+
+    
+    if 'selector_position' in conf:
+        #print(conf['selector_position'])
+        draw_ball(conf['screen'],conf['selector_position'],conf['selector_radius'],conf['selector_colour'])
+        
+
+    
+
+
+
+    
+def draw_ball(surface,pos,radius,colour):
+    """
+    Draw one of the two target "balls" (at the edges of the arc)
+
+    Arguments
+    sgn is whether this is the left or right direction.
+    colour is the draw colour
+    """
+
+    # Draw the two target balls
+    #for sgn in [-1,1]:
+    #tx,ty = conf["ARC_BASE_X"]+sgn*conf["ARC_RADIUS"],conf["ARC_BASE_Y"]
+    tx,ty=pos
+    x1,y1 = robot_to_screen(tx-radius,ty-radius, conf)
+    x2,y2 = robot_to_screen(tx+radius,ty+radius, conf)
+    minx=min(x1,x2)
+    maxx=max(x1,x2)
+    miny=min(y1,y2)
+    maxy=max(y1,y2)
+    pygame.draw.ellipse(surface,colour,#conf["ARC_COLOUR"],
+                        [minx,miny,maxx-minx,maxy-miny])
+
+
+
+
+    
+def pinpoint():
+    """ Select a position on the screen using the joystick."""
+
+    conf['redraw']=True
+    
+    # Start the main loop
+    conf['thread']=Thread(target=mainloop)
+    conf['thread'].start()
+
+
+
+
+
+def get_selector_position(pos):
+    """ Map the joystick position to a position of a selector on the screen."""
+
+    # Determine the joystick position on a range from 0 to 1
+    joy = pos[0]
+    joyrel = (joy-conf['min_joystick'])/(conf['max_joystick']-conf['min_joystick'])
+    if joyrel<0: joyrel=0
+    if joyrel>1: joyrel=1
+    #print(joyrel)
+    
+    # Ok, lovely! Now we can turn that into an angle
+    mn,mx = conf['arc_range']
+    a = conv_ang(mn+joyrel*(mx-mn))
+
+    cx,cy = conf['robot_center']
+    pos = (cx+conf['movement_radius']*np.cos(a),cy+conf['movement_radius']*np.sin(a))
+    
+    return pos
+     
+
+    
+
+def get_joystick():
+    """ Get the current position of the joystick."""
+    joystick = conf['joystick']
+    pos = [ joystick.get_axis( i ) for i in range(2) ] # get the first two axes
+    if len(conf['joystick_history'])==0 or pos!=conf['joystick_history'][-1]:
+        conf['joystick_history'].append(pos) # TODO: make sure we clear the joystick history also!
+    conf['selector_position']=get_selector_position(pos) # update the selector position
+    return pos
+    
+
+
+def mainloop():
+
+    conf['keep_going']=True # be an optimist!
+    pygame.event.clear() # Make sure there is no previous events in the pipeline
+
+    while conf['keep_going']:
+
+        time.sleep(.001) # wait a little bit
+
+        # Flush the time
+        t = time.time()
+
+        # Wait for the next event
+        evs = pygame.event.get()
+
+        for ev in evs:
+
+            if ev.type==pygame.JOYAXISMOTION:
+                conf['joystick.pos']=get_joystick() # update the joystick position
+                conf['redraw']=True
+
+        if conf['redraw']:
+            draw_arc_selector()
+            draw_ball(conf['screen'],conf['robot_center'],.01,(255,0,0))
+            pygame.display.flip()
+
+    print("Bailed out of main loop.")
+    
+
+
+
+
 
 
 
@@ -191,34 +366,25 @@ def close_logs():
 
 
 
+    
 
 def read_schedule_file():
-    ## Read a schedule file that tells us when to start which trial.
-    ## Each time is divided by the TR duration to find the number of the TR.
+    """ Read a schedule file which tells us the parameters of each trial."""
 
     print("Reading trial schedule file %s"%conf['schedulefile'])
-    f = open(conf['schedulefile'],'r')
-    lns = f.readlines()
-    f.close()
 
-    # Extract the header
-    header = [ h.strip() for h in lns[0].split() ]
+    schedule = pd.read_csv(conf['schedulefile'],sep=' ')
 
-    trials = []
-    for l in lns[1:]:
-        fields = [ f.strip() for f in l.split() ]
-        dat = dict( zip(header,fields) )
-        trials.append({"trial"      :int(dat["trial"]),
-                       "TR"         :int(dat["TR"]),
-                       "t.offset"   :float(dat["t.offset"])})
-        
-
-
-    conf['schedule'] = trials
+    for c in ['trial','type','mov.direction','visual.rotation']:
+        if not c in schedule.columns:
+            print("## ERROR: missing column %s in schedule."%c)
+    
+    conf['schedule'] = schedule
     #experiment.ntrials = len([ tr for tr in trials if tr["type"]=="arctrace" ])
-    print("Finished reading %i trials"%len(conf['schedule']))
+    print("Finished reading %i trials"%(conf['schedule'].shape[0]))
 
 
+    
 
 
 
@@ -261,7 +427,7 @@ def end_program():
     """ When the user presses the quit button. """
 
     conf['keep_going'] = False
-    time.sleep(3) # wait until some last commands may have stopped
+    time.sleep(1) # wait until some last commands may have stopped
 
     close_logs()
     
@@ -272,22 +438,6 @@ def end_program():
     ending()
     sys.exit(0)
 
-
-
-
-
-def decide_timing(trialdata):
-    # Set the current time to be the end time of the trial.
-    # Then determine whether the timing of the current trial was correct.
-    trialdata["t.trial.end"]=trialdata["t.current"]
-
-    ## Decide how long this trial's movement was.
-    dtime = trialdata["t.trial.end"]-trialdata["t.movestart"]   
-    trialdata["duration"]=dtime
-    if dtime<conf["MIN_MOVEMENT_TIME"]:
-        trialdata["timing"]="too_fast"
-    if dtime>conf["MAX_MOVEMENT_TIME"]:
-        trialdata["timing"]="too_slow"
 
     
     
@@ -346,10 +496,7 @@ def run():
 
     ##center_trackball(experiment)
     # This means we are still waiting for the first trigger
-    experiment.current_tr       = 1 # the number of the TR we have received. 0 means nothing yet received. 1 is the first TR.
-    experiment.current_schedule = 0 # this is a pointer to where we are in the schedule. if zero, it means we haven't yet received the first trigger
-    experiment.trigger_times    = [time.time()] # pretend that we receive a trigger
-
+    conf['current_schedule'] = 0 # this is a pointer to where we are in the schedule. if zero, it means we haven't yet received the first trigger
     draw_positions(experiment,trialdata)
     pygame.display.flip()
 
@@ -549,7 +696,25 @@ def run():
 
     
 
+
+def select_schedule():
+    """ Show a dialog that lets the user select a file. """
     
+    fn = filedialog.askopenfilename(filetypes = (("CSV files", "*.csv")
+                                                 ,("All files", "*.*") ))
+    if not fn or not len(fn):
+        print("No file selected.")
+    else:
+        gui["schedulef"].set(fn)
+
+
+
+
+
+
+
+
+        
 
 def init_tk():
     global gui
@@ -579,22 +744,19 @@ def init_tk():
 
     row +=1
     gui["schedulef"]  = StringVar()
-    gui["schedulef"].set("simpleschedule.txt")
+    gui["schedulef"].set("schedule.csv")
     l      = Label(f, text="schedule file",          fg="white", bg="black")
     e      = Entry(f, textvariable=gui["schedulef"], fg="white", bg="black",insertbackground='yellow')
     l.grid(row=row,column=0,sticky=W,pady=10)
     e.grid(row=row,column=1,sticky=W,padx=10)
+    b   = Button(f, text="select",                background="gray",foreground="black", command=select_schedule)
+    b.grid(row=row,column=2,sticky=W,padx=10)
 
-
-    row +=1
-    gui["visualfb"] = IntVar()
-    gui["visualfb"].set(1)
-    c = Checkbutton(f,text="Show visual feedback",variable=gui["visualfb"],fg='red',bg='black') #,fg='white',bg='black')
-    c.grid(row=row,column=0,sticky=W,padx=10,pady=10)
-    #c.configure(state=NORMAL)
-    
     row += 1
     runb.grid      (row=row,column=0,sticky=W,padx=10)
+
+    b   = Button(f, text="pinpoint",             background="purple",foreground="black", command=pinpoint)
+    b.grid(row=row,column=1,sticky=W,padx=10)
     
     row += 1
     quitb.grid     (row=row,sticky=W,padx=10,pady=10)
@@ -627,17 +789,7 @@ def init_tk():
 
 ## Initialise everything
 conf['screen'],conf['mainfont'] = init_interface(conf)
-#draw_positions(experiment,{"phase":"null","direction":"left","target.position":conf["RIGHT_ARC_ORIGIN"],"start.position":conf["LEFT_ARC_ORIGIN"]})
 pygame.display.flip()
-
-# This prepares the surface that contains the arc, so that we don't have to
-# fully redraw it every time we refresh the screen. So they are prepared once and
-# then cached.
-#global arcsurf_toright
-#global arcsurf_toleft
-#arcsurf,arclocation = prepare_arc(experiment)
-#arcsurf_toleft  = pygame.transform.flip(arcsurf_toright,True,False)
-
 
 
 master = init_tk()

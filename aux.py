@@ -32,14 +32,27 @@ def init_interface(conf):
     mainfont = None
 
     import os
-    os.environ['SDL_VIDEO_WINDOW_POS'] = "%d,%d" % conf["SCREENPOS"] # controls where the subject screen will appear
+    os.environ['SDL_VIDEO_WINDOW_POS'] = "%d,%d" % conf["screenpos"] # controls where the subject screen will appear
     
     # Initialise the display
-    screen = pygame.display.set_mode(conf["SCREENSIZE"],displayFlags)
+    screen = pygame.display.set_mode(conf["screensize"],displayFlags)
     screen.convert()
     pygame.display.set_caption('Curry')
     pygame.mouse.set_visible(False)
-    screen.fill(conf["BGCOLOR"])
+
+    joystick_count = pygame.joystick.get_count()
+    if joystick_count==0:
+        print("## ERROR: no joystick found!")
+        sys.exit(0) # this is problematic!
+    if joystick_count>1:
+        print("## ERROR: multiple joystick.  Unsure which to use.")
+        sys.exit(0)
+        
+    conf['joystick'] = pygame.joystick.Joystick(0)
+    conf['joystick'].init()
+    conf['joystick_history']=[]
+    
+    screen.fill(conf["bgcolor"])
 
     pygame.display.flip()
 
@@ -50,95 +63,6 @@ def init_interface(conf):
 def ending():
     # To stop the program
     pygame.quit()
-
-
-
-
-
-def waitforkey( keys ):
-    # Just wait until the user presses one of these keys,
-    # then return the key that was pressed and the reaction
-    # time.
-    t0 = time.time()
-    bailout = False 
-    key = None
-    t=0
-    pygame.event.clear() # Make sure there is no previous keypresses in the pipeline
-
-    while not bailout:
-
-        time.sleep(.01) # wait for 10ms
-
-        # Flush the time 
-        t = time.time()
-
-        # Wait for the next event
-        evs = pygame.event.get()
-
-        for ev in evs:
-
-            if ev.type == pygame.KEYDOWN:
-                if ev.key in keys:
-                    key = keys.index(ev.key)+1
-                    bailout=True
-                if ev.key == pygame.K_ESCAPE:
-                    sys.exit(0)
-
-            if ev.type == pygame.QUIT:
-                sys.exit(0)
-
-
-    return (t,key)
-
-
-
-
-
-def textScreen( surf, font, text,
-                bgColor = None,
-                fontcolor = (255,255,255),
-                linespacing = 40 ):
-    """ Display the given text on the screen surface """
-
-    if bgColor==None:
-        bgColor = conf["BGCOLOR"]
-    surf.fill( bgColor )
-
-    # First convert each line into a separate surface
-    lines = text.split("\n")
-    textboxes = []
-    for line in lines:
-        textboxes.append( font.render(line,True,fontcolor) )
-
-    # Then blit the surfaces onto the screen
-    starty = (surf.get_height()-(len(lines)*linespacing))/2
-    i=0
-    for i in range(len(textboxes)):
-        # Put the image of the text on the screen at 250 x250
-        surf.blit( textboxes[i] , ((surf.get_width()-textboxes[i].get_size()[0])/2,
-                                   starty+(i*linespacing)) )
-
-
-    return starty+(len(lines)*linespacing)
-        
-
-
-
-
-
-
-
-
-
-def message_screen(message):
-    # Show a message on the screen and wait for the user to press the space bar."
-    textScreen(conf['screen'],conf['mainfont'],message)
-    pygame.display.flip()
-    ret = waitforkey([pygame.K_SPACE])
-    #while experiment.inputs.getEvent()!=None:
-    #pass # purge the event cue for the mouse
-    return
-
 
 
 
@@ -162,34 +86,6 @@ def fade(p,colora,colorb):
     ## IF p==0, use color a, if p==1, use color b
     lst = (1-p)*np.array(colora)+p*np.array(colorb)
     return tuple([ int(x) for x in lst ])
-
-
-
-
-def find_closest_point( frompos, topos, mincare=np.nan ):
-    # Find the distance vector from frompos (i,j) to the closest
-    # point in the series topos (x,y) (each of x and y is a vector of points)
-    # If you specify mincare, then we drop out of the loop
-    # once we hit a distance that is below mincare.
-
-    (i,j)   = frompos
-    (xs,ys) = topos
-
-    mindist = np.inf
-    minp = np.nan,np.nan
-    for (x,y) in zip(xs,ys):
-        dx,dy = i-x,j-y
-        dist = dx**2+dy**2
-        if dist<mindist:
-            minp = dx,dy
-            mindist=dist
-            if dist<mincare:
-                return minp
-    return minp
-
-
-
-
 
 
 
