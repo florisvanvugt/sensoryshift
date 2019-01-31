@@ -1,0 +1,5 @@
+trial type mov.direction visual.rotation
+1 passive 0 0
+2 passive 0 30
+3 passive 45 30
+4 test 20 NA
