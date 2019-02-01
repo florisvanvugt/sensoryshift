@@ -87,6 +87,7 @@ conf["cursor_radius"] = .005 # in robot coordinates (m)
 
 # this is the display size of the target, not the size of the target area used for determining whether subjects are long enough "within" the target.
 conf["target_radius"] = .005
+conf["target_colour"]  = (0,0,255)
 
 # The cursor colour
 conf["active_cursor_colour"]  = (0,255,0)
@@ -144,9 +145,13 @@ conf['fade_duration']=.5 # how long to fade when holding at the starting point
 conf['fade_cue_colour']=(255,0,0) # the colour of the cursor while holding still (fading forces)
 
 #conf['move_cue_colour']=(0,255,0) # the colour of the cursor when ready to move
+conf['move_controller'] = 6
 
 
-conf['phases']=['init','return','forward','backward','completed','select','completed','fade','move']
+conf['phases']=['init','return','forward','backward','completed',
+                'move' # has to be # 5, because gets mapped to fvv_trial_phase and the robot move controller expects this to be five
+                'completed',
+                'select','fade']
 
 
 
@@ -378,6 +383,7 @@ def start_new_trial():
     trialdata['mov.direction']   =sched['mov.direction']
     trialdata['visual.rotation'] =sched['visual.rotation']
 
+
     print("\n\n\n### TRIAL %d %s ###"%(trialdata['trial'],trialdata['type']))
     print("    direction: %.2f  rotation: %.2f deg\n"%(trialdata['mov.direction'],trialdata['visual.rotation']))
     robot.wshm('fvv_trial_no',     0) # ensure that we start recording at the beginning of the trajectory buffer
@@ -450,15 +456,18 @@ def mainloop():
 
         if phase_is('return'):
             if robot.move_is_done(): # if we are back at the starting point
-                if schedule['type'] in ['passive','pinpoint']:
+                if schedule['type'] in ['passive','pinpoint','active']:
                     angle = conv_ang(schedule['mov.direction'])
                     cx,cy=conf['robot_center']
                     r = conf['movement_radius']
                     trialdata['target.angle']=angle
                     trialdata['target_position']=(cx+r*np.cos(angle),cy+r*np.sin(angle))
                     tx,ty = trialdata['target_position']
+                    
+                if schedule['type'] in ['passive','pinpoint']:
                     robot.move_to(tx,ty,conf['passive_duration'])
                     next_phase('forward')
+                    
                 if schedule['type']=='active': # active movement
                     hold_fade()
                     next_phase('fade')
@@ -467,8 +476,15 @@ def mainloop():
 
         if phase_is('fade'):
             if trialdata['t.absolute']>trialdata.get('hold.until.t',0): # if the hold time is expired
+                robot.wshm('fvv_trial_phase',5) # signal that we are moving
+                robot.controller(conf['move_controller'])
                 next_phase('move')
                 trialdata['redraw']=True
+
+        if phase_is('move'):
+            if robot.rshm('fvv_trial_phase')==6: # this is the signal from the move controller that the subject has stopped moving
+                robot.stay()
+                next_phase('completed')
                 
                     
         if phase_is('forward'):
@@ -542,6 +558,10 @@ def mainloop():
                     trialdata['cursor_position']=rotate((trialdata['robot_x'],trialdata['robot_y']),deg2rad(trialdata['visual.rotation']),conf['robot_center'])
                     draw_ball(conf['screen'],trialdata['cursor_position'],conf['cursor_radius'],colour)
 
+                # If this is active, show a target position too
+                if trialdata['type']=='active' and 'target_position' in trialdata and not phase_is('return'):
+                    draw_ball(conf['screen'],trialdata['target_position'],conf['target_radius'],conf['target_colour'])
+                    
 
                 
             pygame.display.flip()

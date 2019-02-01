@@ -96,3 +96,5 @@ udevadm info {device}
 - [x] Disable pointer Kensington in X
 
 - [x] Make a history of selector positions?
+- [ ] Show target
+
