@@ -40,17 +40,18 @@ def init_interface(conf):
     pygame.display.set_caption('Curry')
     pygame.mouse.set_visible(False)
 
-    joystick_count = pygame.joystick.get_count()
-    if joystick_count==0:
-        print("## ERROR: no joystick found!")
-        sys.exit(0) # this is problematic!
-    if joystick_count>1:
-        print("## ERROR: multiple joystick.  Unsure which to use.")
-        sys.exit(0)
+    if conf['use_joystick']:
+        joystick_count = pygame.joystick.get_count()
+        if joystick_count==0:
+            print("## ERROR: no joystick found!")
+            sys.exit(0) # this is problematic!
+        if joystick_count>1:
+            print("## ERROR: multiple joystick.  Unsure which to use.")
+            sys.exit(0)
         
-    conf['joystick'] = pygame.joystick.Joystick(0)
-    conf['joystick'].init()
-    conf['joystick_history']=[]
+        conf['joystick'] = pygame.joystick.Joystick(0)
+        conf['joystick'].init()
+        conf['joystick_history']=[]
     
     screen.fill(conf["bgcolor"])
 

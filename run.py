@@ -100,7 +100,7 @@ conf['robot_center']= (0,-.05) # robot center position
 # The extent of the arc being displayed on the screen when the
 # subject selects the placement of the hand
 # This is in angles, degrees, with 0 = straight ahead, and positive angles are counterclockwise
-conf['arc_range']= (45,0)
+conf['arc_range']= (-45,45)
 
 conf['arc_draw_segments'] = 100 # how many segments to draw the arc (higher=more precision but takes more resources)
 conf['arc_thickness']     = .001 # how thick to draw the 'selector' arc
@@ -109,13 +109,6 @@ conf['arc_colour']        = (127,127,127)
 
 conf['selector_radius']=.005 # the radius of the selector ball that is controlled by the joystick
 conf['selector_colour']=(0,0,255)
-
-
-# Range of the joystick values
-# anything outside this range is snapped to the edges
-conf['max_joystick']= 1
-conf['min_joystick']= 0
-
 
 
 # How long to take for the return movement
@@ -127,7 +120,18 @@ conf['passive_duration']=1.5 # seconds
 conf['stay_duration']=1 # how long to stay "out there" in between forward and backward movement
 
 
+
+# Range of the joystick values
+# anything outside this range is snapped to the edges
+conf['use_joystick']=False
+conf['max_joystick']= 1
+conf['min_joystick']= 0
+
+
+
+conf['use_mouse']=True
 conf['mouse_device']='/dev/input/by-id/usb-Kensington_Kensington_USB_PS2_Orbit-mouse'
+conf['mouse_selector_tick']=.001 # how much to change the selector (range 0..1) for one mouse 'tick' (this determines the maximum precision)
 
 
 # Data that is specific to this trial
@@ -180,7 +184,7 @@ def draw_arc_selector():
     
     if 'selector_angle' in trialdata:
         #print(conf['selector_position'])
-        pos = selector_position_from_angle(trialdata['selector_angle'])
+        pos = selector_position_from_angle(conv_ang(trialdata['selector_angle']))
         draw_ball(conf['screen'],pos,conf['selector_radius'],conf['selector_colour'])
         
 
@@ -231,7 +235,7 @@ def launch_mainloop():
 
 
 
-def get_selector_angle(pos):
+def get_selector_prop(pos):
     """ Map the joystick position to a position of a selector on the screen."""
 
     # Determine the joystick position on a range from 0 to 1
@@ -240,13 +244,32 @@ def get_selector_angle(pos):
     if joyrel<0: joyrel=0
     if joyrel>1: joyrel=1
     #print(joyrel)
-    
-    # Ok, lovely! Now we can turn that into an angle
-    mn,mx = conf['arc_range']
-    a = conv_ang(mn+joyrel*(mx-mn))
-    return a
-    
+
+    return joyrel
      
+
+
+
+def update_selector(dpos):
+    """ Given a mouse move event (change in x, change in y),
+    update the selector value."""
+    dchange = sum(dpos)*conf['mouse_selector_tick']
+    p = trialdata['selector_prop']+dchange
+    p = p%1
+    trialdata['selector_prop']=p
+    selector_to_angle()
+
+
+
+def selector_to_angle():
+    """ Map a value in the selector range (0..1) to an actual angle (in deg) """
+    prop = trialdata.get('selector_prop',None)
+    if prop:
+        mn,mx = conf['arc_range']
+        trialdata['selector_angle']=mn+prop*(mx-mn)
+        #print("prop = %f angle = %f"%(trialdata['selector_prop'],trialdata['selector_angle']))
+    
+    
 
     
 
@@ -257,7 +280,8 @@ def get_joystick():
     if 'joystick_history' in trialdata:
         if len(trialdata['joystick_history'])==0 or pos!=trialdata['joystick_history'][-1]:
             trialdata['joystick_history'].append(pos) # TODO: make sure we clear the joystick history also!
-    trialdata['selector_angle']=get_selector_angle(pos) # update the selector position
+    trialdata['selector_prop']=get_selector_prop(pos) # update the selector position
+    selector_to_angle()
     return pos
     
 
@@ -331,7 +355,8 @@ def mainloop():
     trialdata['redraw']=True
     trialdata['first.t']=time.time()
     pygame.event.clear() # Make sure there is no previous events in the pipeline
-    conf['mouse'].purgeEvents()
+    if conf['use_mouse']:
+        conf['mouse'].purgeEvents()
 
     while gui['keep_going']:
 
@@ -349,16 +374,28 @@ def mainloop():
         trialdata['robot_x'],trialdata['robot_y'] = robot.rshm('x'),robot.rshm('y')
         
         # Get any waiting events (joystick, but maybe other events as well)
-        evs = pygame.event.get()
-        for ev in evs:
-            if ev.type==pygame.JOYAXISMOTION:
-                trialdata['joystick.pos']=get_joystick() # update the joystick position
+        if conf['use_joystick']:
+            evs = pygame.event.get()
+            if phase_is('select'):
+                for ev in evs:
+                    if ev.type==pygame.JOYAXISMOTION:
+                        trialdata['joystick.pos']=get_joystick() # update the joystick position
+                        trialdata['redraw']=True
+                    if ev.type==pygame.JOYBUTTONDOWN:
+                        trialdata['selection_made']=True
+
+        if conf['use_mouse']:
+            ev = conf['mouse'].getEvent()
+            if ev and phase_is('select'): # Update the selector position based on this movement
+                x,y=ev[0],ev[1]
+                update_selector((x,y))
                 trialdata['redraw']=True
 
-        ev = conf['mouse'].getEvent()
-        if ev:
-            print(ev)# change position
+                for i in range(2,len(ev)-1):
+                    if ev[i]: trialdata['selection_made']=True
 
+
+                
 
 
         ##
@@ -402,12 +439,17 @@ def mainloop():
 
                 if schedule['type']=='pinpoint':
                     robot.stay()
+
+                    trialdata['selector_prop']=random.random()
+                    trialdata['selection_made']=False
                     next_phase('select')
 
 
                     
         if phase_is('select'):
-            pass # determine when to stop (go to completed)
+            if trialdata['selection_made']:
+                print("Selected angle %.2f deg (%.2f)"%(trialdata['selector_angle'],trialdata['selector_prop']))
+                next_phase('completed') # this will automatically wrap up the trial
 
 
         if phase_is('completed'):
@@ -423,7 +465,8 @@ def mainloop():
 
             conf['screen'].fill(conf['bgcolor'])
 
-            if phase_is('select'):
+            if phase_is('select'): # If we are in the select phase
+                if 'selector_prop' in trialdata: selector_to_angle()
                 draw_arc_selector()
                 draw_ball(conf['screen'],conf['robot_center'],.01,(255,0,0))
 
@@ -515,7 +558,7 @@ def init_logs():
 def write_logs():
     """ At the end of a trial, write into the log. """
     hist = {}
-    for k in ['type','mov.direction','visual.rotation','target.angle','target_position','cursor_position','t.phase']:
+    for k in ['type','mov.direction','visual.rotation','target.angle','target_position','cursor_position','t.phase','selector_angle','selector_prop']:
         v = trialdata.get(k,None)
         if isinstance(v,np.ndarray):
             v = v.tolist()
@@ -626,10 +669,6 @@ def run():
 
     global conf
 
-    print("Running the experiment.")
-    gui["running"]=True
-    update_ui()
-    
     participant=gui["subject.id"].get().strip()
     if participant=="":
         tkMessageBox.showinfo("Error", "You need to enter a participant ID.")
@@ -645,6 +684,12 @@ def run():
         tkMessageBox.showinfo("Error", "The schedule file name you entered does not exist.")
         return
     conf['schedulefile'] = schedulefile
+
+
+    print("Running the experiment.")
+    gui["running"]=True
+    update_ui()
+    
 
     
     read_schedule_file()
@@ -754,8 +799,12 @@ def init_tk():
 
 
 def init_mouse():
-    mouse = MouseInput(conf['mouse_device'])
-    conf['mouse']=mouse
+    if conf['use_mouse']:
+        if not os.path.exists(conf['mouse_device']):
+            print("## ERROR: mouse device does not exist")
+            sys.exit(-1)
+        mouse = MouseInput(conf['mouse_device'])
+        conf['mouse']=mouse
 
 
 

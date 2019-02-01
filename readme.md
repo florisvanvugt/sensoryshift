@@ -14,6 +14,9 @@ Run `screencalib.py` to ensure the mapping between robot positions and the scree
 `make`
 
 
+If you use the trackball as a selector, you will probably want to disable it in X (otherwise the subject hijacks your mouse cursor)
+
+
 
 # Schedule file
 
@@ -64,7 +67,9 @@ SUBSYSTEM=="input", MODE="666"
 
 To get information about a particular device, use
 
-```udevadm info {device}```
+```
+udevadm info {device}
+```
 
 (where `{device}` is the device node).
 
@@ -86,3 +91,8 @@ To get information about a particular device, use
 - [ ] Active trials: show trajectory in preview window
 
 - [ ] Could also control the robot with the joystick to move you passively across the workspace
+
+- [x] Run button disabled when no subject is given
+- [ ] Disable pointer Kensington in X
+
+- [ ] Make a history of selector positions?
