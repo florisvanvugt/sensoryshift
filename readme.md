@@ -81,18 +81,18 @@ udevadm info {device}
 # TODO
 - [ ] Robot binary log
 - [ ] Record handle forces
-- [ ] Record trial # in log
+- [ ] Record trial # in robot log
 - [ ] Joystick positioning: random offset at every trial
 
-- [ ] Could "cache" the selector arc surface and then blit it
+- [x] Could "cache" the selector arc surface and then blit it -- not necessary I suppose
 - [ ] Screen calibration -- covariance between X and Y?
-- [ ] Trial log: log the times, results, targets, etc.
+- [x] Trial log: log the times, results, targets, etc.
 
 - [ ] Active trials: show trajectory in preview window
 
 - [ ] Could also control the robot with the joystick to move you passively across the workspace
 
 - [x] Run button disabled when no subject is given
-- [ ] Disable pointer Kensington in X
+- [x] Disable pointer Kensington in X
 
 - [ ] Make a history of selector positions?
