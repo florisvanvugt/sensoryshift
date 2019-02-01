@@ -37,6 +37,10 @@ import json
 import pandas as pd
 
 
+
+from mouse import *
+
+
 # The little control window
 CONTROL_WIDTH,CONTROL_HEIGHT= 500,550 #1000,800 #450,400 # control window dimensions
 CONTROL_X,CONTROL_Y = 500,50 # controls where on the screen the control window appears
@@ -120,8 +124,10 @@ conf['return_duration']=1.5 # seconds
 # How long to take for the passive movements
 conf['passive_duration']=1.5 # seconds
 
+conf['stay_duration']=1 # how long to stay "out there" in between forward and backward movement
 
 
+conf['mouse_device']='/dev/input/by-id/usb-Kensington_Kensington_USB_PS2_Orbit-mouse'
 
 
 # Data that is specific to this trial
@@ -299,12 +305,15 @@ def start_new_trial():
     # Okay, if that wasn't the case, we can safely start our new trial
     trialdata['current_schedule']+=1
 
+
     sched = current_schedule() # Retrieve the current schedule
     trialdata['trial']           =sched['trial'] # trial number
     trialdata['type']            =sched['type']
     trialdata['mov.direction']   =sched['mov.direction']
     trialdata['visual.rotation'] =sched['visual.rotation']
 
+    print("\n\n\n### TRIAL %d %s ###"%(trialdata['trial'],trialdata['type']))
+    print("    direction: %.2f  rotation: %.2f deg\n"%(trialdata['mov.direction'],trialdata['visual.rotation']))
 
     ## Return the robot to the center
     sx,sy = conf['robot_center']
@@ -322,24 +331,22 @@ def mainloop():
     trialdata['redraw']=True
     trialdata['first.t']=time.time()
     pygame.event.clear() # Make sure there is no previous events in the pipeline
+    conf['mouse'].purgeEvents()
 
     while gui['keep_going']:
 
         time.sleep(.0005) # add a little breath
         trialdata["t.absolute"] = time.time()
         trialdata["t.current"] = trialdata["t.absolute"]-trialdata['first.t']
+        schedule = current_schedule()
 
+
+        ##
+        ## INPUT PHASE
+        ##
+        
         # Read the current position
         trialdata['robot_x'],trialdata['robot_y'] = robot.rshm('x'),robot.rshm('y')
-
-        if phase_is('init'):
-            # Start a new trial
-            start_new_trial()
-
-        if phase_is('return'):
-            if robot.move_is_done():
-                next_phase('something')
-            
         
         # Get any waiting events (joystick, but maybe other events as well)
         evs = pygame.event.get()
@@ -348,16 +355,88 @@ def mainloop():
                 trialdata['joystick.pos']=get_joystick() # update the joystick position
                 trialdata['redraw']=True
 
+        ev = conf['mouse'].getEvent()
+        if ev:
+            print(ev)# change position
+
+
+
+        ##
+        ## CONTROL FLOW
+        ##
+        if phase_is('init'):
+            # Start a new trial
+            start_new_trial()
+
+        if phase_is('return'):
+            if robot.move_is_done():
+                if schedule['type'] in ['passive','pinpoint']:
+                    angle = conv_ang(schedule['mov.direction'])
+                    cx,cy=conf['robot_center']
+                    r = conf['movement_radius']
+                    trialdata['target.angle']=angle
+                    trialdata['target_position']=(cx+r*np.cos(angle),cy+r*np.sin(angle))
+                    tx,ty = trialdata['target_position']
+                    robot.move_to(tx,ty,conf['passive_duration'])
+                    next_phase('forward')
+
+        if phase_is('forward'):
+            if robot.move_is_done():
+                if schedule['type'] in ['passive','pinpoint']:
+                    robot.stay()
+                    trialdata['stay.until.t']=trialdata['t.absolute']+conf['stay_duration']
+                    next_phase('stay')
+
+        if phase_is('stay'):
+            if trialdata['t.absolute']>trialdata.get('stay.until.t',0):
+                if schedule['type'] in ['passive','pinpoint']:
+                    sx,sy = conf['robot_center']
+                    robot.move_to(sx,sy,conf['passive_duration'])
+                    next_phase('backward')
+                    
+        if phase_is('backward'):
+            if robot.move_is_done():
+                if schedule['type'] in ['passive']:
+                    robot.stay()
+                    next_phase('completed')
+
+                if schedule['type']=='pinpoint':
+                    robot.stay()
+                    next_phase('select')
+
+
+                    
+        if phase_is('select'):
+            pass # determine when to stop (go to completed)
+
+
+        if phase_is('completed'):
+            write_logs()
+            start_new_trial()
+            
+        
+
+
+                
         # Possibly update the display
         if trialdata['redraw']:
 
             conf['screen'].fill(conf['bgcolor'])
+
             if phase_is('select'):
                 draw_arc_selector()
                 draw_ball(conf['screen'],conf['robot_center'],.01,(255,0,0))
 
-            if phase_in(['return']):
-                draw_ball(conf['screen'],(trialdata['robot_x'],trialdata['robot_y']),conf['cursor_radius'],conf['cursor_colour'])
+            if phase_in(['forward','backward','stay','return']):
+
+                # Show a cursor
+                if trialdata['type'] in ['passive','active']:
+                    trialdata['cursor_position']=rotate((trialdata['robot_x'],trialdata['robot_y']),trialdata['visual.rotation'],conf['robot_center'])
+                    draw_ball(conf['screen'],trialdata['cursor_position'],conf['cursor_radius'],conf['cursor_colour'])
+
+                draw_ball(conf['screen'],(trialdata['robot_x'],trialdata['robot_y']),conf['cursor_radius'],(100,100,100)) # only for debug: show the real robot position
+
+                
             pygame.display.flip()
 
             
@@ -411,13 +490,13 @@ def init_logs():
     capturelog = '%scaptured.pickle27'%basename
     ##trajlog.write('participant experiment trial x y dx dy t t.absolute\n')
 
-    triallog = open('%strials.json'%basename,'w')
+    triallogf = '%strials.json'%basename
 
     ## Also dump the configuration parameters, this will make it easier to debug in the future
     conflog = open('%sparameters.json'%basename,'w')
     params = {}
     for key in sorted(conf):
-        if key not in ['joystick','screen']: # don't dump that stuff
+        if key not in ['joystick','screen','mouse']: # don't dump that stuff: not serialisable
             params[key]=conf[key]
     params['schedule']=trialdata['schedule']
     json.dump(params,conflog)
@@ -426,17 +505,29 @@ def init_logs():
     conf['obsvlog']     = '%sobservations.txt'%basename # where we will write the experimenter observations
 
     conf['trajlog']     = trajlog
-    conf['triallog']    = triallog
+    conf['triallogf']   = triallogf
     conf['capturelog']  =capturelog
 
 
 
 
 
+def write_logs():
+    """ At the end of a trial, write into the log. """
+    hist = {}
+    for k in ['type','mov.direction','visual.rotation','target.angle','target_position','cursor_position','t.phase']:
+        v = trialdata.get(k,None)
+        if isinstance(v,np.ndarray):
+            v = v.tolist()
+        hist[k]=v
+    conf['trialhistory'].append(hist)
+    json.dump(conf['trialhistory'],open(conf['triallogf'],'w')) # this will overwrite the previous file
+    
+
+
 
 def close_logs():
     if gui["logging"]:
-        conf['triallog'].close()
         robot.stop_log()
     gui["logging"]=False
 
@@ -558,6 +649,8 @@ def run():
     
     read_schedule_file()
 
+    conf['trialhistory']=[] # this is where we will keep info from all previous trials.
+
     trialdata['participant'] =conf['participant']
     trialdata['schedulefile']=conf['schedulefile']
     init_logs()
@@ -660,8 +753,16 @@ def init_tk():
 
 
 
+def init_mouse():
+    mouse = MouseInput(conf['mouse_device'])
+    conf['mouse']=mouse
+
+
+
+
 ## Initialise everything
 conf['screen'],conf['mainfont'] = init_interface(conf)
+init_mouse()
 pygame.display.flip()
 
 

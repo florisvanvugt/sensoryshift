@@ -122,3 +122,28 @@ def screen_to_robot(rx,ry,conf):
     calib=conf["calib"]
     return ( (rx-calib["interc.x"])/calib["slope.x"],
              (ry-calib["interc.y"])/calib["slope.y"])
+
+
+
+
+
+
+
+
+
+import scipy
+
+def rotate(pts,ang,cnt):
+    """ Rotate a point (x,y) in pts by a certain angle (in radians),
+    around a certain pivot point (cnt) """
+    # See e.g. http://gis.stackexchange.com/questions/23587/how-do-i-rotate-the-polygon-about-an-anchor-point-using-python-script
+    pts = np.array(pts)
+    cnt = np.array(cnt)
+    #ang = -ang
+    return scipy.dot(pts-cnt,
+                     # Rotation matrix
+                     scipy.array([[np.cos(ang),np.sin(ang)],
+                                  [-np.sin(ang),np.cos(ang)]]))+cnt
+    
+
+
