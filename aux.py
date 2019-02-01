@@ -7,6 +7,8 @@ import numpy as np
 import pickle
 
 
+import scipy
+
 
 # The font used for displaying anything of interest
 FONTFILE = "fonts/Aller_Rg.ttf"
@@ -132,8 +134,6 @@ def screen_to_robot(rx,ry,conf):
 
 
 
-import scipy
-
 def rotate(pts,ang,cnt):
     """ Rotate a point (x,y) in pts by a certain angle (in radians),
     around a certain pivot point (cnt) """
@@ -148,3 +148,7 @@ def rotate(pts,ang,cnt):
     
 
 
+
+
+def deg2rad(deg):
+    return (deg/180)*np.pi

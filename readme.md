@@ -95,4 +95,4 @@ udevadm info {device}
 - [x] Run button disabled when no subject is given
 - [x] Disable pointer Kensington in X
 
-- [ ] Make a history of selector positions?
+- [x] Make a history of selector positions?

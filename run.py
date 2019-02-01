@@ -50,7 +50,6 @@ EXPERIMENT = "sensoryshift"
 
 
 
-N_ROBOT_LOG = 13 # how many columns go in the robot log file
 
 
 # This is a global dict that holds all the configuration options. 
@@ -58,6 +57,8 @@ N_ROBOT_LOG = 13 # how many columns go in the robot log file
 global conf
 conf = {}
 
+
+conf['N_ROBOT_LOG'] = 13 # how many columns go in the robot log file
 
 
 conf['fullscreen']=False
@@ -88,13 +89,15 @@ conf["cursor_radius"] = .005 # in robot coordinates (m)
 conf["target_radius"] = .005
 
 # The cursor colour
-conf["cursor_colour"] = (255,255,255)
+conf["active_cursor_colour"]  = (0,255,0)
+conf["passive_cursor_colour"] = (255,0,0)
 
 
 # The radius of the movement
 conf['movement_radius']=.15 # meters
 
 conf['robot_center']= (0,-.05) # robot center position
+conf['robot_center_x'],conf['robot_center_y']=conf["robot_center"]  # just because we often need these separately as well
 
 
 # The extent of the arc being displayed on the screen when the
@@ -132,6 +135,19 @@ conf['min_joystick']= 0
 conf['use_mouse']=True
 conf['mouse_device']='/dev/input/by-id/usb-Kensington_Kensington_USB_PS2_Orbit-mouse'
 conf['mouse_selector_tick']=.001 # how much to change the selector (range 0..1) for one mouse 'tick' (this determines the maximum precision)
+
+
+
+# The controller that can be used for the fade duration
+conf['fade_controller'] = 5
+conf['fade_duration']=.5 # how long to fade when holding at the starting point
+conf['fade_cue_colour']=(255,0,0) # the colour of the cursor while holding still (fading forces)
+
+#conf['move_cue_colour']=(0,255,0) # the colour of the cursor when ready to move
+
+
+conf['phases']=['init','return','forward','backward','completed','select','completed','fade','move']
+
 
 
 # Data that is specific to this trial
@@ -226,6 +242,26 @@ def pinpoint():
     launch_mainloop()
 
 
+
+
+
+def hold_fade():
+    """ Hold and fade the robot handle """
+    robot.wshm('traj_count',          0) # ensure that we start recording at the beginning of the trajectory buffer
+    robot.wshm('fvv_workspace_enter', 0) # initialise: signal that the subject has not yet entered the workspace
+    robot.wshm('fvv_robot_center_x', conf['robot_center_x'])
+    robot.wshm('fvv_robot_center_y', conf['robot_center_y'])
+    robot.wshm('plg_p1x',            conf['robot_center_x']) # the position for the initial hold
+    robot.wshm('plg_p2x',            conf['robot_center_y'])
+    robot.wshm("fvv_force_fade",      1.0) # This starts at 1.0 but exponentially decays to infinitely small
+    robot.wshm("plg_stiffness",       robot.stiffness)
+    robot.wshm("plg_damping",         robot.damping)
+
+    robot.controller(conf['fade_controller'])
+    
+
+
+    
     
 def launch_mainloop():
     conf['thread']=Thread(target=mainloop)
@@ -266,8 +302,14 @@ def selector_to_angle():
     prop = trialdata.get('selector_prop',None)
     if prop:
         mn,mx = conf['arc_range']
-        trialdata['selector_angle']=mn+prop*(mx-mn)
-        #print("prop = %f angle = %f"%(trialdata['selector_prop'],trialdata['selector_angle']))
+        a = mn+(mx-mn)*prop
+        trialdata['selector_angle']=a
+
+        ## Add this to the history of selections
+        hist = trialdata.get('selector_history',[])
+        if len(hist)==0 or hist[-1]!=a:
+            hist.append(a)
+        trialdata['selector_history']=hist
     
     
 
@@ -338,6 +380,7 @@ def start_new_trial():
 
     print("\n\n\n### TRIAL %d %s ###"%(trialdata['trial'],trialdata['type']))
     print("    direction: %.2f  rotation: %.2f deg\n"%(trialdata['mov.direction'],trialdata['visual.rotation']))
+    robot.wshm('fvv_trial_no',     0) # ensure that we start recording at the beginning of the trajectory buffer
 
     ## Return the robot to the center
     sx,sy = conf['robot_center']
@@ -406,7 +449,7 @@ def mainloop():
             start_new_trial()
 
         if phase_is('return'):
-            if robot.move_is_done():
+            if robot.move_is_done(): # if we are back at the starting point
                 if schedule['type'] in ['passive','pinpoint']:
                     angle = conv_ang(schedule['mov.direction'])
                     cx,cy=conf['robot_center']
@@ -416,7 +459,18 @@ def mainloop():
                     tx,ty = trialdata['target_position']
                     robot.move_to(tx,ty,conf['passive_duration'])
                     next_phase('forward')
+                if schedule['type']=='active': # active movement
+                    hold_fade()
+                    next_phase('fade')
+                    trialdata['hold.until.t']=trialdata['t.absolute']+conf['fade_duration']
+                    trialdata['redraw']=True
 
+        if phase_is('fade'):
+            if trialdata['t.absolute']>trialdata.get('hold.until.t',0): # if the hold time is expired
+                next_phase('move')
+                trialdata['redraw']=True
+                
+                    
         if phase_is('forward'):
             if robot.move_is_done():
                 if schedule['type'] in ['passive','pinpoint']:
@@ -440,7 +494,9 @@ def mainloop():
                 if schedule['type']=='pinpoint':
                     robot.stay()
 
-                    trialdata['selector_prop']=random.random()
+                    r = random.random()
+                    trialdata['selector_prop']   =r
+                    trialdata['selector_initial']=r # mark that this was the first angle, in case we need to report this later on
                     trialdata['selection_made']=False
                     next_phase('select')
 
@@ -470,14 +526,22 @@ def mainloop():
                 draw_arc_selector()
                 draw_ball(conf['screen'],conf['robot_center'],.01,(255,0,0))
 
-            if phase_in(['forward','backward','stay','return']):
+            if phase_in(['forward','backward','stay','return','fade','move']):
+
+                # For debug only: show veridical robot position
+                draw_ball(conf['screen'],(trialdata['robot_x'],trialdata['robot_y']),conf['cursor_radius'],(100,100,100)) # only for debug: show the real robot position
 
                 # Show a cursor
                 if trialdata['type'] in ['passive','active']:
-                    trialdata['cursor_position']=rotate((trialdata['robot_x'],trialdata['robot_y']),trialdata['visual.rotation'],conf['robot_center'])
-                    draw_ball(conf['screen'],trialdata['cursor_position'],conf['cursor_radius'],conf['cursor_colour'])
+                    if phase_is('fade'):
+                        colour=conf['fade_cue_colour']
+                    elif phase_is('move'):
+                        colour = conf['active_cursor_colour']
+                    else:
+                        colour = conf['passive_cursor_colour']
+                    trialdata['cursor_position']=rotate((trialdata['robot_x'],trialdata['robot_y']),deg2rad(trialdata['visual.rotation']),conf['robot_center'])
+                    draw_ball(conf['screen'],trialdata['cursor_position'],conf['cursor_radius'],colour)
 
-                draw_ball(conf['screen'],(trialdata['robot_x'],trialdata['robot_y']),conf['cursor_radius'],(100,100,100)) # only for debug: show the real robot position
 
                 
             pygame.display.flip()
@@ -500,6 +564,10 @@ def next_phase(p):
     k = trialdata.get('t.phase',{})
     k[p]=time.time()
     trialdata['t.phase']=k
+
+    # Mark on the robot that this phase started too
+    if p in conf['phases']:
+        robot.wshm('fvv_trial_phase',conf['phases'].index(p))
 
 
 
@@ -526,14 +594,15 @@ def init_logs():
     basename = '%s/%s_%s_%s'%(basedir,conf['participant'],EXPERIMENT,timestamp)
         
     trajlog = '%strajectory.bin'%basename
-    robot.start_log(trajlog,N_ROBOT_LOG)
+    robot.start_log(trajlog,conf['N_ROBOT_LOG'])
     gui["logging"]=True
 
     conf['captured'] = []
     capturelog = '%scaptured.pickle27'%basename
     ##trajlog.write('participant experiment trial x y dx dy t t.absolute\n')
 
-    triallogf = '%strials.json'%basename
+    
+    dumplog = '%sdump.json'%basename
 
     ## Also dump the configuration parameters, this will make it easier to debug in the future
     conflog = open('%sparameters.json'%basename,'w')
@@ -547,9 +616,13 @@ def init_logs():
 
     conf['obsvlog']     = '%sobservations.txt'%basename # where we will write the experimenter observations
 
+    triallog = '%strials.txt'%basename
+    conf['triallog'] = open(triallog,'w')
+    conf['triallog'].write(trial_header())
+
     conf['trajlog']     = trajlog
-    conf['triallogf']   = triallogf
-    conf['capturelog']  =capturelog
+    conf['dumpf']       = dumplog
+    conf['capturelog']  = capturelog
 
 
 
@@ -558,19 +631,31 @@ def init_logs():
 def write_logs():
     """ At the end of a trial, write into the log. """
     hist = {}
-    for k in ['type','mov.direction','visual.rotation','target.angle','target_position','cursor_position','t.phase','selector_angle','selector_prop']:
+    for k in ['type','mov.direction','visual.rotation','target.angle','target_position','cursor_position','t.phase','selector_angle','selector_prop','selector_history','selector_initial']:
         v = trialdata.get(k,None)
         if isinstance(v,np.ndarray):
             v = v.tolist()
         hist[k]=v
     conf['trialhistory'].append(hist)
-    json.dump(conf['trialhistory'],open(conf['triallogf'],'w')) # this will overwrite the previous file
+    json.dump(conf['trialhistory'],open(conf['dumpf'],'w')) # this will overwrite the previous file
+
+    conf['triallog'].write(trial_log())
+    conf['triallog'].flush()
     
+
+
+LOG_COLUMNS = ['trial','mov.direction','visual.rotation','selector_angle','selector_prop']
+def trial_header():
+    return " ".join(LOG_COLUMNS)+"\n"
+    
+def trial_log():
+    return " ".join([str(trialdata.get(v,None)) for v in LOG_COLUMNS])+"\n"
 
 
 
 def close_logs():
     if gui["logging"]:
+        conf['triallog'].close()
         robot.stop_log()
     gui["logging"]=False
 
