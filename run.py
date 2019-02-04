@@ -392,6 +392,7 @@ def start_new_trial():
     trialdata['type']            =sched['type']
     trialdata['mov.direction']   =sched['mov.direction']
     trialdata['visual.rotation'] =sched['visual.rotation']
+    trialdata['position_history']=[] # start with a clean position history (we'll fill this up during active trials only)
 
 
     print("\n\n\n### TRIAL %d %s ###"%(trialdata['trial'],trialdata['type']))
@@ -404,9 +405,15 @@ def start_new_trial():
     next_phase('return') # return to the starting point to start the trial
     
     
+
+
+
+def record_position(x,y):
+    trialdata['position_history'].append((x,y))
+
+
+
     
-
-
 def mainloop():
 
     gui['running']=True
@@ -419,7 +426,7 @@ def mainloop():
 
     while gui['keep_going']:
 
-        time.sleep(.0005) # add a little breath
+        time.sleep(.001) # add a little breath
         trialdata["t.absolute"] = time.time()
         trialdata["t.current"] = trialdata["t.absolute"]-trialdata['first.t']
         schedule = current_schedule()
@@ -431,6 +438,8 @@ def mainloop():
         
         # Read the current position
         trialdata['robot_x'],trialdata['robot_y'] = robot.rshm('x'),robot.rshm('y')
+        if phase_in(['fade','move']):
+            record_position(trialdata['robot_x'],trialdata['robot_y'])
         
         # Get any waiting events (joystick, but maybe other events as well)
         if conf['use_joystick']:
@@ -486,13 +495,14 @@ def mainloop():
 
         if phase_is('fade'):
             if trialdata['t.absolute']>trialdata.get('hold.until.t',0): # if the hold time is expired
-                robot.wshm('fvv_trial_phase',5) # signal that we are moving
+                robot.wshm('fvv_move_done',0) # we'll set this to one once the movement is completed
                 robot.controller(conf['move_controller'])
                 next_phase('move')
+                robot.wshm('fvv_trial_phase',5) # signal that we are moving
                 trialdata['redraw']=True
 
         if phase_is('move'):
-            if robot.rshm('fvv_trial_phase')==6: # this is the signal from the move controller that the subject has stopped moving
+            if robot.rshm('fvv_move_done'): # this is the signal from the move controller that the subject has stopped moving
                 robot.stay()
                 next_phase('completed')
                 
@@ -535,6 +545,9 @@ def mainloop():
 
 
         if phase_is('completed'):
+            # Read the position at peak velocity
+            for vr in ['vmax_x','vmax_y','final_x','final_y']:
+                trialdata[vr]=robot.rshm('fvv_%s'%vr)
             write_logs()
             start_new_trial()
             
@@ -676,7 +689,7 @@ def write_logs():
     
 
 
-LOG_COLUMNS = ['trial','mov.direction','visual.rotation','selector_angle','selector_prop']
+LOG_COLUMNS = ['trial','mov.direction','visual.rotation','selector_angle','selector_prop','vmax_x','vmax_y','final_x','final_y']
 def trial_header():
     return " ".join(LOG_COLUMNS)+"\n"
     

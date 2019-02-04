@@ -82,7 +82,7 @@ udevadm info {device}
 - [ ] Robot binary log
 - [ ] Record handle forces
 - [ ] Record trial # in robot log
-- [ ] Joystick positioning: random offset at every trial
+- [x] Joystick positioning: random offset at every trial
 
 - [x] Could "cache" the selector arc surface and then blit it -- not necessary I suppose
 - [ ] Screen calibration -- covariance between X and Y?
@@ -97,4 +97,7 @@ udevadm info {device}
 
 - [x] Make a history of selector positions?
 - [ ] Show target
+
+- [ ] Use radial velocity for determining cutoff during move phase?
+
 
