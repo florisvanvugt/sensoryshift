@@ -29,6 +29,10 @@ The `type` column tells you the type of a trial:
    
 Angles are specified in degrees relative to 0=straight ahead, and positive angles are counterclockwise.
 
+In the schedule file, there are various columns:
+   * `target.direction`: the physical angle at which the target is displayed (not affected by any rotation)
+   * `mov.direction`: the physical angle at which the subject hand will be moved (again, not affected by rotation)
+   * `cursor.rotation`: the angle by which the visual cursor is rotated (where 0 rotation means the cursor follows the physical hand position).
 
 
 

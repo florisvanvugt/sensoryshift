@@ -16,9 +16,11 @@ from threading import Thread
 
 from aux import *
 
-import robot.interface as robot # for real testing
-#import robot.dummy as robot # for debug/development
-#robot = None
+DEBUG = True
+if DEBUG:
+    import robot.dummy as robot # for debug/development
+else:
+    import robot.interface as robot # for real testing
 
 import subprocess
 
@@ -85,11 +87,15 @@ _,conf["calib"] = json.load(open(conf['calibfile'],'r')) #, encoding='latin1') i
 
 
 # The sizes of various objects
-conf["cursor_radius"] = .005 # in robot coordinates (m)
+conf["cursor_radius"] = .0035 # in robot coordinates (m)
 
 # this is the display size of the target, not the size of the target area used for determining whether subjects are long enough "within" the target.
-conf["target_radius"] = .005
+conf["target_radius"] = .0075
 conf["target_colour"]  = (0,0,255)
+
+# the marker for the center
+conf['center_marker_radius']=.0075
+conf['center_marker_colour']=(100,100,100)
 
 # The cursor colour
 conf["active_cursor_colour"]  = (0,255,0)
@@ -110,11 +116,11 @@ conf['arc_range']= (-45,45)
 
 conf['arc_draw_segments'] = 100 # how many segments to draw the arc (higher=more precision but takes more resources)
 conf['arc_thickness']     = .001 # how thick to draw the 'selector' arc
-conf['arc_colour']        = (127,127,127)
+conf['arc_colour']        = (80,80,80) # colour of the arc selector
 
 
 conf['selector_radius']=.005 # the radius of the selector ball that is controlled by the joystick
-conf['selector_colour']=(0,0,255)
+conf['selector_colour']=(100,100,255)
 
 
 # How long to take for the return movement
@@ -371,6 +377,7 @@ def start_new_trial():
         print("Experiment schedule completed.")
         next_phase('completed')
         gui['keep_going'] = False # this will bail out of the main loop
+        gui['running'] = False
         time.sleep(1) # wait until some last commands may have stopped
         close_logs()
         update_ui()
@@ -390,14 +397,17 @@ def start_new_trial():
     sched = current_schedule() # Retrieve the current schedule
     trialdata['trial']           =sched['trial'] # trial number
     trialdata['type']            =sched['type']
-    trialdata['mov.direction']   =sched['mov.direction']
-    trialdata['visual.rotation'] =sched['visual.rotation']
+    trialdata['target.direction']=sched['target.direction']  # display angle of the target
+    trialdata['mov.direction']   =sched['mov.direction']     # physical angle of movement
+    trialdata['cursor.rotation'] =sched['cursor.rotation']   # rotation applied to cursor before display
     trialdata['position_history']=[] # start with a clean position history (we'll fill this up during active trials only)
 
+    for v in ['vmax_x','vmax_y','final_x','final_y']:
+        trialdata[v]=None
 
     print("\n\n\n### TRIAL %d %s ###"%(trialdata['trial'],trialdata['type']))
-    print("    direction: %.2f  rotation: %.2f deg\n"%(trialdata['mov.direction'],trialdata['visual.rotation']))
-    robot.wshm('fvv_trial_no',     0) # ensure that we start recording at the beginning of the trajectory buffer
+    print("    target: %.2f  movement: %.2f  rotation: %.2f deg\n"%(trialdata['target.direction'],trialdata['mov.direction'],trialdata['cursor.rotation']))
+    robot.wshm('fvv_trial_no',     trialdata['trial'])
 
     ## Return the robot to the center
     sx,sy = conf['robot_center']
@@ -412,7 +422,16 @@ def record_position(x,y):
     trialdata['position_history'].append((x,y))
 
 
+def position_from_angle(angle):
+    """ Return the position based on the angle, relative to the starting point
+    and assuming a movement of a standard radius."""
+    cx,cy=conf['robot_center']
+    r = conf['movement_radius']
+    return (cx+r*np.cos(angle),cy+r*np.sin(angle))
 
+
+
+    
     
 def mainloop():
 
@@ -476,21 +495,26 @@ def mainloop():
         if phase_is('return'):
             if robot.move_is_done(): # if we are back at the starting point
                 if schedule['type'] in ['passive','pinpoint','active']:
-                    angle = conv_ang(schedule['mov.direction'])
-                    cx,cy=conf['robot_center']
-                    r = conf['movement_radius']
-                    trialdata['target.angle']=angle
-                    trialdata['target_position']=(cx+r*np.cos(angle),cy+r*np.sin(angle))
-                    tx,ty = trialdata['target_position']
+
+                    # Determine the angle of the display target
+                    angle = conv_ang(schedule['target.direction'])
+                    trialdata['target.display.angle']=angle
+                    trialdata['target_position']=position_from_angle(angle)
                     
-                if schedule['type'] in ['passive','pinpoint']:
-                    robot.move_to(tx,ty,conf['passive_duration'])
-                    next_phase('forward')
+                    if schedule['type'] in ['passive','pinpoint']:
+
+                        angle = conv_ang(schedule['mov.direction'])
+                        trialdata['movement_angle']=angle
+                        trialdata['movement_position']=position_from_angle(angle)
+                        tx,ty = trialdata['movement_position']
+                        robot.move_to(tx,ty,conf['passive_duration'])
+                        next_phase('forward')
                     
-                if schedule['type']=='active': # active movement
-                    hold_fade()
-                    next_phase('fade')
-                    trialdata['hold.until.t']=trialdata['t.absolute']+conf['fade_duration']
+                    if schedule['type']=='active': # active movement
+                        hold_fade()
+                        next_phase('fade')
+                        trialdata['hold.until.t']=trialdata['t.absolute']+conf['fade_duration']
+                        
                     trialdata['redraw']=True
 
         if phase_is('fade'):
@@ -560,15 +584,21 @@ def mainloop():
 
             conf['screen'].fill(conf['bgcolor'])
 
+            # Draw start position
+            draw_ball(conf['screen'],conf['robot_center'],conf['center_marker_radius'],conf['center_marker_colour'])
+
+            if 'target_position' in trialdata and not trialdata['type']=='pinpoint': # We show a target always, only not if this is a pinpoint trial
+                draw_ball(conf['screen'],trialdata['target_position'],conf['target_radius'],conf['target_colour'])
+            
             if phase_is('select'): # If we are in the select phase
                 if 'selector_prop' in trialdata: selector_to_angle()
                 draw_arc_selector()
-                draw_ball(conf['screen'],conf['robot_center'],.01,(255,0,0))
 
             if phase_in(['forward','backward','stay','return','fade','move']):
 
                 # For debug only: show veridical robot position
-                draw_ball(conf['screen'],(trialdata['robot_x'],trialdata['robot_y']),conf['cursor_radius'],(100,100,100)) # only for debug: show the real robot position
+                if DEBUG:
+                    draw_ball(conf['screen'],(trialdata['robot_x'],trialdata['robot_y']),conf['cursor_radius'],(100,100,100)) # only for debug: show the real robot position
 
                 # Show a cursor
                 if trialdata['type'] in ['passive','active']:
@@ -578,12 +608,9 @@ def mainloop():
                         colour = conf['active_cursor_colour']
                     else:
                         colour = conf['passive_cursor_colour']
-                    trialdata['cursor_position']=rotate((trialdata['robot_x'],trialdata['robot_y']),deg2rad(trialdata['visual.rotation']),conf['robot_center'])
+                    trialdata['cursor_position']=rotate((trialdata['robot_x'],trialdata['robot_y']),deg2rad(trialdata['cursor.rotation']),conf['robot_center'])
                     draw_ball(conf['screen'],trialdata['cursor_position'],conf['cursor_radius'],colour)
 
-                # If this is active, show a target position too
-                if trialdata['type']=='active' and 'target_position' in trialdata and not phase_is('return'):
-                    draw_ball(conf['screen'],trialdata['target_position'],conf['target_radius'],conf['target_colour'])
                     
 
                 
@@ -676,7 +703,7 @@ def init_logs():
 def write_logs():
     """ At the end of a trial, write into the log. """
     hist = {}
-    for k in ['type','mov.direction','visual.rotation','target.angle','target_position','cursor_position','t.phase','selector_angle','selector_prop','selector_history','selector_initial']:
+    for k in ['type','target.direction','mov.direction','cursor.rotation','target_position','cursor_position','t.phase','selector_angle','selector_prop','selector_history','selector_initial']:
         v = trialdata.get(k,None)
         if isinstance(v,np.ndarray):
             v = v.tolist()
@@ -689,7 +716,7 @@ def write_logs():
     
 
 
-LOG_COLUMNS = ['trial','mov.direction','visual.rotation','selector_angle','selector_prop','vmax_x','vmax_y','final_x','final_y']
+LOG_COLUMNS = ['trial','mov.direction','cursor.rotation','selector_angle','selector_prop','vmax_x','vmax_y','final_x','final_y']
 def trial_header():
     return " ".join(LOG_COLUMNS)+"\n"
     
@@ -717,7 +744,7 @@ def read_schedule_file():
     print("Reading trial schedule file %s"%conf['schedulefile'])
 
     s = pd.read_csv(conf['schedulefile'],sep=' ')
-    for c in ['trial','type','mov.direction','visual.rotation']:
+    for c in ['trial','type','target.direction','mov.direction','cursor.rotation']:
         if not c in s.columns:
             print("## ERROR: missing column %s in schedule."%c)
 

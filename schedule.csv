@@ -1,6 +1,8 @@
-trial type mov.direction visual.rotation force.field
-1 passive 0 0 0
-2 passive 0 30 0
-3 passive 45 30 0
-4 pinpoint 20 NA 0
-5 active 0 30 0
+trial type target.direction mov.direction cursor.rotation force.field
+1 passive 0 0 0 0
+2 passive 0 5 -5 0
+3 passive 0 10 -10 0
+4 passive 0 0 30 0
+5 passive 0 45 30 0
+6 pinpoint 0 20 NA 0
+7 active 0 0 30 0
