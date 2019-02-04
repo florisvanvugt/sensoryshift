@@ -16,7 +16,7 @@ from threading import Thread
 
 from aux import *
 
-DEBUG = True
+DEBUG = False
 if DEBUG:
     import robot.dummy as robot # for debug/development
 else:
@@ -143,7 +143,7 @@ conf['min_joystick']= 0
 
 conf['use_mouse']=True
 conf['mouse_device']='/dev/input/by-id/usb-Kensington_Kensington_USB_PS2_Orbit-mouse'
-conf['mouse_selector_tick']=.001 # how much to change the selector (range 0..1) for one mouse 'tick' (this determines the maximum precision)
+conf['mouse_selector_tick']=.0005 # how much to change the selector (range 0..1) for one mouse 'tick' (this determines the maximum precision)
 
 
 
@@ -167,6 +167,7 @@ conf['phases']=['init', #0
                 'select',
                 'fade',
                 'stay',
+                'hold',
 ]
 
 
@@ -373,8 +374,10 @@ def start_new_trial():
     if trialdata['current_schedule']==len(trialdata['schedule'])-1:
         # Done the experiment!
         print("## BLOCK COMPLETED ##")
+        robot.move_to(conf['robot_center_x'],conf['robot_center_y'],conf['return_duration'])
+        while not robot.move_is_done():
+            time.sleep(.1)
         robot.stay() # just fix the handle wherever it is
-        print("Experiment schedule completed.")
         next_phase('completed')
         gui['keep_going'] = False # this will bail out of the main loop
         gui['running'] = False
@@ -430,6 +433,16 @@ def position_from_angle(angle):
     return (cx+r*np.cos(angle),cy+r*np.sin(angle))
 
 
+
+
+def start_move_controller():
+    robot.wshm('fvv_move_done',0) # we'll set this to one once the movement is completed
+    robot.wshm('fvv_max_vel',0)
+    robot.wshm('fvv_vmax_x',0)
+    robot.wshm('fvv_vmax_y',0)
+    robot.wshm('fvv_vel_low_timer',0)
+    robot.controller(conf['move_controller'])
+    
 
     
     
@@ -519,8 +532,7 @@ def mainloop():
 
         if phase_is('fade'):
             if trialdata['t.absolute']>trialdata.get('hold.until.t',0): # if the hold time is expired
-                robot.wshm('fvv_move_done',0) # we'll set this to one once the movement is completed
-                robot.controller(conf['move_controller'])
+                start_move_controller()
                 next_phase('move')
                 robot.wshm('fvv_trial_phase',5) # signal that we are moving
                 trialdata['redraw']=True
@@ -528,6 +540,11 @@ def mainloop():
         if phase_is('move'):
             if robot.rshm('fvv_move_done'): # this is the signal from the move controller that the subject has stopped moving
                 robot.stay()
+                next_phase('hold')
+                trialdata['hold.until.t']=trialdata['t.absolute']+conf['stay_duration']
+
+        if phase_is('hold'):
+            if trialdata['t.absolute']>trialdata.get('hold.until.t',0):
                 next_phase('completed')
                 
                     
@@ -680,7 +697,7 @@ def init_logs():
     conflog = open('%sparameters.json'%basename,'w')
     params = {}
     for key in sorted(conf):
-        if key not in ['joystick','screen','mouse']: # don't dump that stuff: not serialisable
+        if key not in ['joystick','screen','mouse','thread']: # don't dump that stuff: not serialisable
             params[key]=conf[key]
     params['schedule']=trialdata['schedule']
     json.dump(params,conflog)

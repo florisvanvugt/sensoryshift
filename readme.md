@@ -42,7 +42,7 @@ Every block starts in `init`.
 
   * Passive trials `init -> return -> forward -> backward -> completed`
   * Pinpoint trials `init -> return -> forward -> backward -> select -> completed`
-  * Active trials `init -> return -> fade -> move -> completed`
+  * Active trials `init -> return -> fade -> move -> hold -> completed`
 
 
 
