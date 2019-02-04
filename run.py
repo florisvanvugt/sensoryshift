@@ -27,12 +27,14 @@ if PYTHON3:
     from tkinter import *
     from tkinter import messagebox as tkMessageBox
     from tkinter import filedialog
+    import tkinter.simpledialog as tksd
 
 else: # python2
     from Tkinter import * # use for python2
     import tkMessageBox
     from Tkinter import filedialog
-
+    import tkSimpleDialog as tksd
+    
 import json
 import pandas as pd
 
@@ -148,10 +150,18 @@ conf['fade_cue_colour']=(255,0,0) # the colour of the cursor while holding still
 conf['move_controller'] = 6
 
 
-conf['phases']=['init','return','forward','backward','completed',
-                'move' # has to be # 5, because gets mapped to fvv_trial_phase and the robot move controller expects this to be five
-                'completed',
-                'select','fade']
+# Note that these phase numbers are not necessarily incremental...
+conf['phases']=['init', #0
+                'return', #1
+                'forward', #2
+                'backward', #3
+                'completed', #4
+                'move' #5; has to be # 5, because gets mapped to fvv_trial_phase and the robot move controller expects this to be five
+                'endmove', #6: has to be #6 because that's what the move controller sets it to
+                'select',
+                'fade',
+                'stay',
+]
 
 
 
@@ -361,15 +371,15 @@ def start_new_trial():
         print("Experiment schedule completed.")
         next_phase('completed')
         gui['keep_going'] = False # this will bail out of the main loop
-        # Now ask the experimenter for observations
-        obsv = tkSimpleDialog.askstring('Please record any observations', 'Experimenter, please write down any observations.\nAny irregularities?\nDid the subject seem concentrated or not?\nWere things unclear or clear?\nAnything else that is worth noting?')
-        with open(conf['obsvlog'],'w') as f:
-            f.write(obsv)
-
-        tkMessageBox.showinfo("Robot", "Block completed! Yay!")
         time.sleep(1) # wait until some last commands may have stopped
         close_logs()
         update_ui()
+        # Now ask the experimenter for observations
+        #obsv = tksd.askstring('Please record any observations', 'Experimenter, please write down any observations.\nAny irregularities?\nDid the subject seem concentrated or not?\nWere things unclear or clear?\nAnything else that is worth noting?')
+        #with open(conf['obsvlog'],'w') as f:
+        #    f.write(obsv)
+
+        tkMessageBox.showinfo("Robot", "Block completed! Yay!")
         return
 
 
@@ -588,6 +598,8 @@ def next_phase(p):
     # Mark on the robot that this phase started too
     if p in conf['phases']:
         robot.wshm('fvv_trial_phase',conf['phases'].index(p))
+    else:
+        print("## WARNING, unknown phase %s"%p)
 
 
 
