@@ -16,8 +16,8 @@ from threading import Thread
 
 from aux import *
 
-#import robot.interface as robot
-import robot.dummy as robot
+import robot.interface as robot # for real testing
+#import robot.dummy as robot # for debug/development
 #robot = None
 
 import subprocess
@@ -156,7 +156,7 @@ conf['phases']=['init', #0
                 'forward', #2
                 'backward', #3
                 'completed', #4
-                'move' #5; has to be # 5, because gets mapped to fvv_trial_phase and the robot move controller expects this to be five
+                'move', #5; has to be # 5, because gets mapped to fvv_trial_phase and the robot move controller expects this to be five
                 'endmove', #6: has to be #6 because that's what the move controller sets it to
                 'select',
                 'fade',
@@ -744,7 +744,7 @@ def load_robot():
     global gui
     tkMessageBox.showinfo("Robot", "We will now load the robot.\n\nLook at the terminal because you may have to enter your sudo password there.")
 
-    robot.launch() # launches the robot C++ script
+    robot.load() # launches the robot C++ script
     # Then do zero FT
     tkMessageBox.showinfo("Robot", "Now we will zero the force transducers.\nAsk the subject to let go of the handle." )
     robot.zeroft()
@@ -918,7 +918,7 @@ def init_tk():
 def init_mouse():
     if conf['use_mouse']:
         if not os.path.exists(conf['mouse_device']):
-            print("## ERROR: mouse device does not exist")
+            print("## ERROR: mouse device %s does not exist"%conf['mouse_device'])
             sys.exit(-1)
         mouse = MouseInput(conf['mouse_device'])
         conf['mouse']=mouse
