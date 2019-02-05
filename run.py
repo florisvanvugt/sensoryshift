@@ -16,7 +16,7 @@ from threading import Thread
 
 from aux import *
 
-DEBUG = False
+DEBUG = True
 if DEBUG:
     import robot.dummy as robot # for debug/development
 else:
@@ -63,6 +63,10 @@ conf = {}
 
 
 conf['N_ROBOT_LOG'] = 13 # how many columns go in the robot log file
+
+
+conf['n_center_capture']=100 # how many samples to collect when capturing the center
+conf['center_capture_period']=.01 # how long to wait between capturing samples for establishing the center
 
 
 conf['fullscreen']=False
@@ -143,6 +147,7 @@ conf['min_joystick']= 0
 
 conf['use_mouse']=True
 conf['mouse_device']='/dev/input/by-id/usb-Kensington_Kensington_USB_PS2_Orbit-mouse'
+conf['mouse_device']='/dev/input/by-id/usb-Microsoft_Microsoft_5-Button_Mouse_with_IntelliEye_TM_-mouse'
 conf['mouse_selector_tick']=.0005 # how much to change the selector (range 0..1) for one mouse 'tick' (this determines the maximum precision)
 
 
@@ -782,16 +787,17 @@ def read_schedule_file():
 def update_ui():
     global gui
     gui["runb"].configure(state=DISABLED)
+    gui["capturecenter"].configure(state=DISABLED)
 
     if gui["loaded"]:
         gui["loadb"].configure(state=DISABLED)
 
         if not gui["running"]:
             gui["runb"].configure(state=NORMAL)
+            gui["capturecenter"].configure(state=NORMAL)
 
     else: # not loaded
         gui["loadb"].configure(state=NORMAL)
-        gui["runb"].configure(state=DISABLED)
 
     
 
@@ -898,6 +904,17 @@ def select_schedule():
 
 
 
+def capture_center():
+    """ Capture the center position from the robot."""
+    xs = []
+    for i in range(conf['n_center_capture']):
+        xs.append(robot.rshm('x'))
+        time.sleep(conf['center_capture_period'])
+    #print(xs)
+    mean_x = np.mean(xs)
+    gui['centerv'].set("%.3f"%mean_x)
+        
+
 
         
 
@@ -936,6 +953,17 @@ def init_tk():
     e.grid(row=row,column=1,sticky=W,padx=10)
     b   = Button(f, text="select",                background="gray",foreground="black", command=select_schedule)
     b.grid(row=row,column=2,sticky=W,padx=10)
+
+    row +=1
+    gui["centerv"]  = StringVar()
+    gui["centerv"].set("0.0")
+    l      = Label(f, text="center X",               fg="white", bg="black")
+    e      = Entry(f, textvariable=gui["centerv"], fg="white", bg="black",insertbackground='yellow')
+    l.grid(row=row,column=0,sticky=W,pady=10)
+    e.grid(row=row,column=1,sticky=W,padx=10)
+    b   = Button(f, text="capture",                background="gray",foreground="black", command=capture_center)
+    b.grid(row=row,column=2,sticky=W,padx=10)
+    gui['capturecenter']=b
 
     row += 1
     runb.grid      (row=row,column=0,sticky=W,padx=10)
