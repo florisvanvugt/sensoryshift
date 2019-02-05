@@ -118,6 +118,7 @@ conf["passive_cursor_colour"] = (255,0,0)
 
 # The radius of the movement
 conf['movement_radius']=.15 # meters
+conf['min_movement_radius']=.75*conf['movement_radius'] # meters; the minimum distance a subject must have travelled before we can call the end of the movement based on peak velocity
 
 conf['target_overshoot_SD']=.01 # in meters, the SD of the overshoot/undershoot of the target in passive trials
 conf['target_overshoot_ask_p']=.99 # percentage of passive trials where we will randomly ask whether the cursor overshot or not
@@ -420,6 +421,7 @@ def start_new_trial():
 
 
     sched = current_schedule() # Retrieve the current schedule
+    trialdata['timestamp']       =time.time()
     trialdata['trial']           =sched['trial'] # trial number
     trialdata['type']            =sched['type']
     trialdata['target.direction']=sched['target.direction']  # display angle of the target
@@ -462,6 +464,9 @@ def position_from_angle(a,radius=None):
 
 def start_move_controller():
     robot.wshm('fvv_move_done',0) # we'll set this to one once the movement is completed
+    robot.wshm('fvv_robot_center_x',conf['robot_center_x'])
+    robot.wshm('fvv_robot_center_y',conf['robot_center_y'])
+    robot.wshm('fvv_min_dist',conf['min_movement_radius'])
     robot.wshm('fvv_max_vel',0)
     robot.wshm('fvv_vmax_x',0)
     robot.wshm('fvv_vmax_y',0)
@@ -492,28 +497,30 @@ def record_plot():
     draw_ball(plot,conf['robot_center'],conf['center_marker_radius'],conf['center_marker_colour'])
     # Draw target
     if 'target_position' in trialdata and not trialdata['type']=='pinpoint': # We show a target always, only not if this is a pinpoint trial
-        draw_ball(plot,trialdata['target_position'],conf['target_radius'],conf['target_colour'])
+        col = get_target_colour()
+        draw_ball(plot,trialdata['target_position'],conf['target_radius'],col)
 
     # Draw the actual positions
     points = [ robot_to_screen(x,y,conf) for x,y in traj ]
     pygame.draw.lines(plot,conf['review_trajectory_colour'],False,points,conf['review_linewidth'])
 
     # Draw the corresponding cursor display
-    if trialdata['cursor.rotation']!=0:
+    if trialdata['cursor.rotation']!=0 and not np.isnan(trialdata['cursor.rotation']):
         rottraj = [ rotate((x,y),deg2rad(trialdata['cursor.rotation']),conf['robot_center']) for x,y in traj ]
         points = [ robot_to_screen(x,y,conf) for (x,y) in rottraj ]
         pygame.draw.lines(plot,conf['review_rotated_colour'],False,points,conf['review_linewidth'])
     
-    fname = 'sneak_peek.bmp'
-    jpg = 'tmp.jpg'
-    gif = 'screenshot.gif'
+    fname = '.sneak_peek.bmp'
+    jpg = '.tmp.jpg'
+    gif = '.screenshot.gif'
     pygame.image.save(plot,fname)
     subprocess.call(['convert',fname,
                      '-crop','800x500+600+150',
                      '-flip',
                      '-resize','480x300',
-                     jpg])
-    subprocess.call(['convert',jpg,gif])
+                     '+repage',
+                     gif])
+    #subprocess.call(['convert',jpg,gif])
     trialdata['saved']=True
     gui["photo"]=PhotoImage(file=gif)
     gui["photolabel"].configure(image=gui["photo"])
@@ -630,6 +637,7 @@ def mainloop():
                         if DEBUG:
                             x,y=trialdata['target_position']
                             robot.preprogram_move_to(x,y,1.5)
+                            robot.future.append({"fvv_max_vel":.46}) # send a max_vel value for testing
                             robot.future.append({"fvv_move_done":1}) # this will happen in the future when the entire trajectory has finished
                         
                     trialdata['redraw']=True
@@ -693,7 +701,7 @@ def mainloop():
             r = numpy.random.uniform()
             if r<conf['target_overshoot_ask_p']:
                 answer = messagebox.askyesno("Question","Did the cursor overshoot (YES) or undershoot (NO) the center of the target?")
-                trialdata['overshoot_answer']=answer
+                trialdata['overshoot_answer']='overshoot' if answer else 'undershoot'
             next_phase('completed')
                     
                     
@@ -727,8 +735,7 @@ def mainloop():
 
                 # Determine the colour
                 col = get_target_colour() if phase_is('hold') else conf['target_colour'] 
-                
-                draw_ball(conf['screen'],trialdata['target_position'],conf['target_radius'],conf['target_colour'])
+                draw_ball(conf['screen'],trialdata['target_position'],conf['target_radius'],col)
             
             if phase_is('select'): # If we are in the select phase
                 if 'selector_prop' in trialdata: selector_to_angle()
@@ -741,7 +748,7 @@ def mainloop():
             if phase_in(['forward','stay','fade','move']):
 
                 # Show a cursor
-                if trialdata['type'] in ['passive','active']:
+                if trialdata['type'] in ['passive','active'] and not np.isnan(trialdata['cursor.rotation']):
                     if phase_is('fade'):
                         colour=conf['fade_cue_colour']
                     elif phase_is('move'):
@@ -856,7 +863,7 @@ def write_logs():
     
 
 
-LOG_COLUMNS = ['trial','type','mov.direction','cursor.rotation','selector_angle','selector_prop','max_vel','vmax_x','vmax_y','final_x','final_y','movement_overshoot','overshoot_answer']
+LOG_COLUMNS = ['trial','type','mov.direction','cursor.rotation','selector_angle','selector_prop','max_vel','vmax_x','vmax_y','final_x','final_y','movement_overshoot','overshoot_answer','timestamp']
 def trial_header():
     return " ".join(LOG_COLUMNS)+"\n"
     
@@ -883,7 +890,7 @@ def read_schedule_file():
 
     print("Reading trial schedule file %s"%conf['schedulefile'])
 
-    s = pd.read_csv(conf['schedulefile'],sep=' ')
+    s = pd.read_csv(conf['schedulefile'],sep=',')
     for c in ['trial','type','target.direction','mov.direction','cursor.rotation']:
         if not c in s.columns:
             print("## ERROR: missing column %s in schedule."%c)
@@ -1105,7 +1112,7 @@ def init_tk():
 
     row += 1
     gui["photo"]=PhotoImage(file='screenshot_base.gif')
-    l = Label(f,image=gui['photo'])
+    l = Label(f,image=gui['photo'],borderwidth=0,highlightthickness=0)
     l.grid(row=row,column=0,columnspan=5,sticky=W)
     gui["photolabel"]=l
     

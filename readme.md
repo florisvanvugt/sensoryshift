@@ -34,6 +34,8 @@ In the schedule file, there are various columns:
    * `mov.direction`: the physical angle at which the subject hand will be moved (again, not affected by rotation)
    * `cursor.rotation`: the angle by which the visual cursor is rotated (where 0 rotation means the cursor follows the physical hand position).
 
+To do visual no-feedback trials, simply set the `cursor.rotation` field to NA.
+
 
 
 # Control flow within the experiment
