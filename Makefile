@@ -12,6 +12,9 @@ documentation.html: readme.md fonts/github-pandoc.css
 run: rob
 	python3 run.py 
 
+dummy:
+	python3 run.py dummy
+
 rob:
 	make -C robot
 

@@ -16,7 +16,7 @@ from threading import Thread
 
 from aux import *
 
-DEBUG = True
+DEBUG = len(sys.argv)>1 and sys.argv[1]=='dummy'
 if DEBUG:
     import robot.dummy as robot # for debug/development
 else:
@@ -141,6 +141,13 @@ conf['passive_duration']=1.5 # seconds
 conf['stay_duration']=1 # how long to stay "out there" in between forward and backward movement
 
 
+# The review panel that shows you the subject's movement
+conf['review_trajectory_colour']=(255,255,255)
+conf['review_rotated_colour']=(0,255,0)
+conf['review_linewidth']=3
+
+
+
 
 # Range of the joystick values
 # anything outside this range is snapped to the edges
@@ -151,8 +158,8 @@ conf['min_joystick']= 0
 
 
 conf['use_mouse']=True
-conf['mouse_device']='/dev/input/by-id/usb-Kensington_Kensington_USB_PS2_Orbit-mouse'
-#conf['mouse_device']='/dev/input/by-id/usb-Microsoft_Microsoft_5-Button_Mouse_with_IntelliEye_TM_-mouse'
+#conf['mouse_device']='/dev/input/by-id/usb-Kensington_Kensington_USB_PS2_Orbit-mouse'
+conf['mouse_device']='/dev/input/by-id/usb-Microsoft_Microsoft_5-Button_Mouse_with_IntelliEye_TM_-mouse'
 conf['mouse_selector_tick']=.0005 # how much to change the selector (range 0..1) for one mouse 'tick' (this determines the maximum precision)
 
 
@@ -455,14 +462,19 @@ def start_move_controller():
 
 
 
-
 def record_plot():
     """ Make a plot of the trajectory we recorded from the robot."""
     if not 'captured' in trialdata:
         print("Nothing captured")
         return
     
-    traj = trialdata['captured']
+    traj = [ (x,y) for (x,y) in trialdata['captured'] ] # a little trick to "make a copy"
+    if len(traj)==0:
+        print("Captured 0 samples")
+        return
+    # Just resample a little bit, so that the drawing will consume less resources
+    traj = traj[ ::10 ]
+    
     #trajx,trajy = zip(*traj) # unzip!
     plot = pygame.Surface(conf['screensize'])
     plot.fill(conf['bgcolor'])
@@ -472,9 +484,17 @@ def record_plot():
     # Draw target
     if 'target_position' in trialdata and not trialdata['type']=='pinpoint': # We show a target always, only not if this is a pinpoint trial
         draw_ball(plot,trialdata['target_position'],conf['target_radius'],conf['target_colour'])
-    
+
+    # Draw the actual positions
     points = [ robot_to_screen(x,y,conf) for x,y in traj ]
-    pygame.draw.lines(plot,(255,255,255),False,points,3)
+    pygame.draw.lines(plot,conf['review_trajectory_colour'],False,points,conf['review_linewidth'])
+
+    # Draw the corresponding cursor display
+    if trialdata['cursor.rotation']!=0:
+        rottraj = [ rotate((x,y),deg2rad(trialdata['cursor.rotation']),conf['robot_center']) for x,y in traj ]
+        points = [ robot_to_screen(x,y,conf) for (x,y) in rottraj ]
+        pygame.draw.lines(plot,conf['review_rotated_colour'],False,points,conf['review_linewidth'])
+    
     fname = 'sneak_peek.bmp'
     jpg = 'tmp.jpg'
     gif = 'screenshot.gif'
