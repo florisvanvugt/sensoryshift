@@ -40,7 +40,7 @@ In the schedule file, there are various columns:
 
 Every block starts in `init`.
 
-  * Passive trials `init -> return -> forward -> backward -> completed`
+  * Passive trials `init -> return -> forward -> backward -> (ask) -> completed`
   * Pinpoint trials `init -> return -> forward -> backward -> select -> completed`
   * Active trials `init -> return -> fade -> move -> hold -> completed`
 

@@ -25,11 +25,12 @@ else:
 import subprocess
 
 PYTHON3 = (sys.version_info > (3, 0))
-if PYTHON3:
+if PYTHON3: # this really is tested on Python 3 so please use that
     from tkinter import *
     from tkinter import messagebox as tkMessageBox
     from tkinter import filedialog
     import tkinter.simpledialog as tksd
+    from tkinter import messagebox
 
 else: # python2
     from Tkinter import * # use for python2
@@ -54,7 +55,7 @@ EXPERIMENT = "sensoryshift"
 
 
 
-
+numpy.random.seed() # make sure we're really random
 
 # This is a global dict that holds all the configuration options. 
 # Using a single variable for them makes it easier to keep track.
@@ -109,6 +110,10 @@ conf["passive_cursor_colour"] = (255,0,0)
 # The radius of the movement
 conf['movement_radius']=.15 # meters
 
+conf['target_overshoot_SD']=.01 # in meters, the SD of the overshoot/undershoot of the target in passive trials
+conf['target_overshoot_ask_p']=.99 # percentage of passive trials where we will randomly ask whether the cursor overshot or not
+
+
 conf['robot_center']= (0,-.05) # robot center position
 conf['robot_center_x'],conf['robot_center_y']=conf["robot_center"]  # just because we often need these separately as well
 
@@ -147,7 +152,7 @@ conf['min_joystick']= 0
 
 conf['use_mouse']=True
 conf['mouse_device']='/dev/input/by-id/usb-Kensington_Kensington_USB_PS2_Orbit-mouse'
-conf['mouse_device']='/dev/input/by-id/usb-Microsoft_Microsoft_5-Button_Mouse_with_IntelliEye_TM_-mouse'
+#conf['mouse_device']='/dev/input/by-id/usb-Microsoft_Microsoft_5-Button_Mouse_with_IntelliEye_TM_-mouse'
 conf['mouse_selector_tick']=.0005 # how much to change the selector (range 0..1) for one mouse 'tick' (this determines the maximum precision)
 
 
@@ -162,17 +167,18 @@ conf['move_controller'] = 6
 
 
 # Note that these phase numbers are not necessarily incremental...
-conf['phases']=['init', #0
-                'return', #1
-                'forward', #2
-                'backward', #3
-                'completed', #4
-                'move', #5; has to be # 5, because gets mapped to fvv_trial_phase and the robot move controller expects this to be five
-                'endmove', #6: has to be #6 because that's what the move controller sets it to
+conf['phases']=['init',
+                'return',
+                'forward',
+                'backward',
+                'completed',
+                'move', 
+                'endmove',
                 'select',
                 'fade',
                 'stay',
                 'hold',
+                'ask'
 ]
 
 
@@ -192,11 +198,6 @@ def conv_ang(a):
     return ((a+90)/180)*np.pi
     
 
-
-def selector_position_from_angle(a):
-    cx,cy = conf['robot_center']
-    pos = (cx+conf['movement_radius']*np.cos(a),cy+conf['movement_radius']*np.sin(a))
-    return pos
 
     
 
@@ -227,7 +228,7 @@ def draw_arc_selector():
     
     if 'selector_angle' in trialdata:
         #print(conf['selector_position'])
-        pos = selector_position_from_angle(conv_ang(trialdata['selector_angle']))
+        pos = position_from_angle(conv_ang(trialdata['selector_angle']))
         draw_ball(conf['screen'],pos,conf['selector_radius'],conf['selector_colour'])
         
 
@@ -431,13 +432,15 @@ def record_position(x,y):
     pass
 
 
-def position_from_angle(angle):
+
+def position_from_angle(a,radius=None):
     """ Return the position based on the angle, relative to the starting point
     and assuming a movement of a standard radius."""
-    cx,cy=conf['robot_center']
-    r = conf['movement_radius']
-    return (cx+r*np.cos(angle),cy+r*np.sin(angle))
-
+    if radius==None:
+        radius = conf['movement_radius']        
+    cx,cy = conf['robot_center']
+    pos = (cx+radius*np.cos(a),cy+radius*np.sin(a))
+    return pos
 
 
 
@@ -560,7 +563,12 @@ def mainloop():
 
                         angle = conv_ang(schedule['mov.direction'])
                         trialdata['movement_angle']=angle
-                        trialdata['movement_position']=position_from_angle(angle)
+                        radius = conf['movement_radius']
+                        if schedule['type']=='passive': # In passive trials, we add a little undershoot/overshoot
+                            o = np.random.normal(0,conf['target_overshoot_SD'])
+                            trialdata['movement_overshoot']=o
+                            radius+=o
+                        trialdata['movement_position']=position_from_angle(angle,radius)
                         tx,ty = trialdata['movement_position']
                         robot.move_to(tx,ty,conf['passive_duration'])
                         next_phase('forward')
@@ -619,7 +627,7 @@ def mainloop():
             if robot.move_is_done():
                 if schedule['type'] in ['passive']:
                     robot.stay()
-                    next_phase('completed')
+                    next_phase('ask')
 
                 if schedule['type']=='pinpoint':
                     robot.stay()
@@ -631,6 +639,13 @@ def mainloop():
                     next_phase('select')
 
 
+        if phase_is('ask'):
+            r = numpy.random.uniform()
+            if r<conf['target_overshoot_ask_p']:
+                answer = messagebox.askyesno("Question","Did the cursor overshoot (YES) or undershoot (NO) the center of the target?")
+                trialdata['overshoot_answer']=answer
+            next_phase('completed')
+                    
                     
         if phase_is('select'):
             if trialdata['selection_made']:
@@ -774,7 +789,7 @@ def init_logs():
 def write_logs():
     """ At the end of a trial, write into the log. """
     hist = {}
-    for k in ['type','target.direction','mov.direction','cursor.rotation','target_position','cursor_position','t.phase','selector_angle','selector_prop','selector_history','selector_initial','captured']:
+    for k in ['type','target.direction','mov.direction','cursor.rotation','target_position','cursor_position','t.phase','selector_angle','selector_prop','selector_history','selector_initial','captured','overshoot_answer','movement_overshoot']:
         v = trialdata.get(k,np.nan)
         if isinstance(v,np.ndarray):
             v = v.tolist()
@@ -787,7 +802,7 @@ def write_logs():
     
 
 
-LOG_COLUMNS = ['trial','type','mov.direction','cursor.rotation','selector_angle','selector_prop','vmax_x','vmax_y','final_x','final_y']
+LOG_COLUMNS = ['trial','type','mov.direction','cursor.rotation','selector_angle','selector_prop','vmax_x','vmax_y','final_x','final_y','movement_overshoot','overshoot_answer']
 def trial_header():
     return " ".join(LOG_COLUMNS)+"\n"
     
