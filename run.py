@@ -47,7 +47,7 @@ from mouse import *
 
 
 # The little control window
-CONTROL_WIDTH,CONTROL_HEIGHT= 500,550 #1000,800 #450,400 # control window dimensions
+CONTROL_WIDTH,CONTROL_HEIGHT= 600,650 #1000,800 #450,400 # control window dimensions
 CONTROL_X,CONTROL_Y = 500,50 # controls where on the screen the control window appears
 
 
@@ -476,13 +476,17 @@ def record_plot():
     points = [ robot_to_screen(x,y,conf) for x,y in traj ]
     pygame.draw.lines(plot,(255,255,255),False,points,3)
     fname = 'sneak_peek.bmp'
+    jpg = 'tmp.jpg'
+    gif = 'screenshot.gif'
     pygame.image.save(plot,fname)
     subprocess.call(['convert',fname,
-                     #'-crop','800x500+600+200',
-                     #'-flip',
-                     '-resize','400x250','screenshot.gif'])
+                     '-crop','800x500+600+150',
+                     '-flip',
+                     '-resize','480x300',
+                     jpg])
+    subprocess.call(['convert',jpg,gif])
     trialdata['saved']=True
-    gui["photo"]=PhotoImage(file='screenshot.gif')
+    gui["photo"]=PhotoImage(file=gif)
     gui["photolabel"].configure(image=gui["photo"])
     
 
