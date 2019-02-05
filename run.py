@@ -96,7 +96,16 @@ conf["cursor_radius"] = .0035 # in robot coordinates (m)
 
 # this is the display size of the target, not the size of the target area used for determining whether subjects are long enough "within" the target.
 conf["target_radius"] = .0075
-conf["target_colour"]  = (0,0,255)
+conf["target_colour"]  = (100,100,100)
+
+# These are the colours for the target, when the subject is too slow, too fast, or correct
+conf["target_slow_colour"]    =(0,0,255)
+conf["target_correct_colour"] =(0,255,0)
+conf["target_fast_colour"]    =(255,0,0)
+
+# Cutoffs on the peak velocity for determining whether the movement was too slow
+conf['too_slow_vmax']=.35
+conf['too_fast_vmax']=.45
 
 # the marker for the center
 conf['center_marker_radius']=.0075
@@ -513,6 +522,19 @@ def record_plot():
 
 
 
+def get_target_colour():
+    """ After a trial is completed, get the target colour."""
+    vmax = trialdata.get('max_vel',None) #robot.rshm('fvv_max_vel')
+    if not vmax: # if we don't have a reading
+        return conf['target_colour']
+
+    if vmax<conf['too_slow_vmax']:
+        return conf['target_slow_colour']
+    if vmax>conf['too_fast_vmax']:
+        return conf['target_fast_colour']
+    return conf['target_correct_colour']
+
+
     
     
 def mainloop():
@@ -623,6 +645,10 @@ def mainloop():
             if robot.rshm('fvv_move_done'): # this is the signal from the move controller that the subject has stopped moving
                 robot.stay()
                 trialdata['captured'] = robot.stop_background_capture() # stop capturing in the background and retrieve the trajectory
+                # Read the position at peak velocity
+                for vr in ['vmax_x','vmax_y','final_x','final_y','max_vel']:
+                    trialdata[vr]=robot.rshm('fvv_%s'%vr)
+                
                 next_phase('hold')
                 trialdata['hold.until.t']=trialdata['t.absolute']+conf['stay_duration']
                 # Plot the movement
@@ -678,9 +704,6 @@ def mainloop():
 
 
         if phase_is('completed'):
-            # Read the position at peak velocity
-            for vr in ['vmax_x','vmax_y','final_x','final_y']:
-                trialdata[vr]=robot.rshm('fvv_%s'%vr)
             write_logs()
 
             start_new_trial()
@@ -688,8 +711,11 @@ def mainloop():
         
 
 
-                
+
+        #
+        #       DISPLAY 
         # Possibly update the display
+        #
         if trialdata['redraw']:
 
             conf['screen'].fill(conf['bgcolor'])
@@ -698,6 +724,10 @@ def mainloop():
             draw_ball(conf['screen'],conf['robot_center'],conf['center_marker_radius'],conf['center_marker_colour'])
 
             if 'target_position' in trialdata and not trialdata['type']=='pinpoint': # We show a target always, only not if this is a pinpoint trial
+
+                # Determine the colour
+                col = get_target_colour() if phase_is('hold') else conf['target_colour'] 
+                
                 draw_ball(conf['screen'],trialdata['target_position'],conf['target_radius'],conf['target_colour'])
             
             if phase_is('select'): # If we are in the select phase
@@ -826,7 +856,7 @@ def write_logs():
     
 
 
-LOG_COLUMNS = ['trial','type','mov.direction','cursor.rotation','selector_angle','selector_prop','vmax_x','vmax_y','final_x','final_y','movement_overshoot','overshoot_answer']
+LOG_COLUMNS = ['trial','type','mov.direction','cursor.rotation','selector_angle','selector_prop','max_vel','vmax_x','vmax_y','final_x','final_y','movement_overshoot','overshoot_answer']
 def trial_header():
     return " ".join(LOG_COLUMNS)+"\n"
     
