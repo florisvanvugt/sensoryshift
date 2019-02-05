@@ -427,7 +427,8 @@ def start_new_trial():
 
 
 def record_position(x,y):
-    trialdata['position_history'].append((x,y))
+    # trialdata['position_history'].append((x,y)) # let's not do this -- we can use the info captured from the robot itself
+    pass
 
 
 def position_from_angle(angle):
@@ -448,6 +449,42 @@ def start_move_controller():
     robot.wshm('fvv_vel_low_timer',0)
     robot.controller(conf['move_controller'])
     
+
+
+
+
+def record_plot():
+    """ Make a plot of the trajectory we recorded from the robot."""
+    if not 'captured' in trialdata:
+        print("Nothing captured")
+        return
+    
+    traj = trialdata['captured']
+    #trajx,trajy = zip(*traj) # unzip!
+    plot = pygame.Surface(conf['screensize'])
+    plot.fill(conf['bgcolor'])
+
+    # Draw start position
+    draw_ball(plot,conf['robot_center'],conf['center_marker_radius'],conf['center_marker_colour'])
+    # Draw target
+    if 'target_position' in trialdata and not trialdata['type']=='pinpoint': # We show a target always, only not if this is a pinpoint trial
+        draw_ball(plot,trialdata['target_position'],conf['target_radius'],conf['target_colour'])
+    
+    points = [ robot_to_screen(x,y,conf) for x,y in traj ]
+    pygame.draw.lines(plot,(255,255,255),False,points,3)
+    fname = 'sneak_peek.bmp'
+    pygame.image.save(plot,fname)
+    subprocess.call(['convert',fname,
+                     #'-crop','800x500+600+200',
+                     #'-flip',
+                     '-resize','400x250','screenshot.gif'])
+    trialdata['saved']=True
+    gui["photo"]=PhotoImage(file='screenshot.gif')
+    gui["photolabel"].configure(image=gui["photo"])
+    
+
+
+
 
     
     
@@ -530,8 +567,16 @@ def mainloop():
                     
                     if schedule['type']=='active': # active movement
                         hold_fade()
+                        robot.background_capture()
+                        # the above line  will activate position capturing in the background,
+                        # so that we can later pull the captured trajectory out
                         next_phase('fade')
                         trialdata['hold.until.t']=trialdata['t.absolute']+conf['fade_duration']
+
+                        if DEBUG:
+                            x,y=trialdata['target_position']
+                            robot.preprogram_move_to(x,y,1.5)
+                            robot.future.append({"fvv_move_done":1}) # this will happen in the future when the entire trajectory has finished
                         
                     trialdata['redraw']=True
 
@@ -545,8 +590,11 @@ def mainloop():
         if phase_is('move'):
             if robot.rshm('fvv_move_done'): # this is the signal from the move controller that the subject has stopped moving
                 robot.stay()
+                trialdata['captured'] = robot.stop_background_capture() # stop capturing in the background and retrieve the trajectory
                 next_phase('hold')
                 trialdata['hold.until.t']=trialdata['t.absolute']+conf['stay_duration']
+                # Plot the movement
+                record_plot()
 
         if phase_is('hold'):
             if trialdata['t.absolute']>trialdata.get('hold.until.t',0):
@@ -595,6 +643,7 @@ def mainloop():
             for vr in ['vmax_x','vmax_y','final_x','final_y']:
                 trialdata[vr]=robot.rshm('fvv_%s'%vr)
             write_logs()
+
             start_new_trial()
             
         
@@ -616,11 +665,11 @@ def mainloop():
                 if 'selector_prop' in trialdata: selector_to_angle()
                 draw_arc_selector()
 
-            if phase_in(['forward','backward','stay','return','fade','move']):
+            # For debug only: show veridical robot position
+            if DEBUG:
+                draw_ball(conf['screen'],(trialdata['robot_x'],trialdata['robot_y']),conf['cursor_radius'],(100,100,100)) # only for debug: show the real robot position
 
-                # For debug only: show veridical robot position
-                if DEBUG:
-                    draw_ball(conf['screen'],(trialdata['robot_x'],trialdata['robot_y']),conf['cursor_radius'],(100,100,100)) # only for debug: show the real robot position
+            if phase_in(['forward','stay','fade','move']):
 
                 # Show a cursor
                 if trialdata['type'] in ['passive','active']:
@@ -633,7 +682,6 @@ def mainloop():
                     trialdata['cursor_position']=rotate((trialdata['robot_x'],trialdata['robot_y']),deg2rad(trialdata['cursor.rotation']),conf['robot_center'])
                     draw_ball(conf['screen'],trialdata['cursor_position'],conf['cursor_radius'],colour)
 
-                    
 
                 
             pygame.display.flip()
@@ -696,15 +744,16 @@ def init_logs():
     ##trajlog.write('participant experiment trial x y dx dy t t.absolute\n')
 
     
-    dumplog = '%sdump.json'%basename
+    dumplog = '%sdump.pickle'%basename
 
     ## Also dump the configuration parameters, this will make it easier to debug in the future
     conflog = open('%sparameters.json'%basename,'w')
     params = {}
     for key in sorted(conf):
-        if key not in ['joystick','screen','mouse','thread']: # don't dump that stuff: not serialisable
+        if key not in ['joystick','screen','mouse','thread','triallog']: # don't dump that stuff: not serialisable
             params[key]=conf[key]
     params['schedule']=trialdata['schedule']
+    #print(params)
     json.dump(params,conflog)
     conflog.close()
 
@@ -725,25 +774,25 @@ def init_logs():
 def write_logs():
     """ At the end of a trial, write into the log. """
     hist = {}
-    for k in ['type','target.direction','mov.direction','cursor.rotation','target_position','cursor_position','t.phase','selector_angle','selector_prop','selector_history','selector_initial']:
-        v = trialdata.get(k,None)
+    for k in ['type','target.direction','mov.direction','cursor.rotation','target_position','cursor_position','t.phase','selector_angle','selector_prop','selector_history','selector_initial','captured']:
+        v = trialdata.get(k,np.nan)
         if isinstance(v,np.ndarray):
             v = v.tolist()
         hist[k]=v
     conf['trialhistory'].append(hist)
-    json.dump(conf['trialhistory'],open(conf['dumpf'],'w')) # this will overwrite the previous file
+    pickle.dump(conf['trialhistory'],open(conf['dumpf'],'wb')) # this will overwrite the previous file
 
     conf['triallog'].write(trial_log())
     conf['triallog'].flush()
     
 
 
-LOG_COLUMNS = ['trial','mov.direction','cursor.rotation','selector_angle','selector_prop','vmax_x','vmax_y','final_x','final_y']
+LOG_COLUMNS = ['trial','type','mov.direction','cursor.rotation','selector_angle','selector_prop','vmax_x','vmax_y','final_x','final_y']
 def trial_header():
     return " ".join(LOG_COLUMNS)+"\n"
     
 def trial_log():
-    return " ".join([str(trialdata.get(v,None)) for v in LOG_COLUMNS])+"\n"
+    return " ".join([str(trialdata.get(v,np.nan)) for v in LOG_COLUMNS])+"\n"
 
 
 
@@ -866,6 +915,16 @@ def run():
     conf['schedulefile'] = schedulefile
 
 
+    centerx=gui["centerv"].get().strip()
+    try:
+        centerx=float(centerx)
+    except:
+        tkMessageBox.showinfo("Error", "The center X location you entered is invalid: %s.\n\nIt has to be a floating number."%centerx)
+        return
+    conf['robot_center_x'] = centerx
+    conf['robot_center']=(conf['robot_center_x'],conf['robot_center_y'])
+
+
     print("Running the experiment.")
     gui["running"]=True
     update_ui()
@@ -957,7 +1016,7 @@ def init_tk():
     row +=1
     gui["centerv"]  = StringVar()
     gui["centerv"].set("0.0")
-    l      = Label(f, text="center X",               fg="white", bg="black")
+    l      = Label(f, text="center X",             fg="white", bg="black")
     e      = Entry(f, textvariable=gui["centerv"], fg="white", bg="black",insertbackground='yellow')
     l.grid(row=row,column=0,sticky=W,pady=10)
     e.grid(row=row,column=1,sticky=W,padx=10)
