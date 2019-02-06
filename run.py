@@ -163,6 +163,7 @@ conf['review_linewidth']         =3
 conf['review_force_scale']       =.01 # scale from N to m, just for display purposes
 conf['review_force_colour']      =(255,0,0)
 conf['review_force_width']       =3
+conf['review_passive_width']     =3 # width of the line of the passive point
 
 
 # How much curl to use
@@ -464,8 +465,8 @@ def start_new_trial():
         trialdata[v]=None
 
     
-    trialinfo =  "trial %d %s "%(trialdata['trial'],trialdata['type'])
-    trialinfo += ("targ: %.2f mov: %.2f rot: %.2f deg; ff: %s\n"%(trialdata['target.direction'],trialdata['mov.direction'],trialdata['cursor.rotation'],trialdata['force.field']))
+    trialinfo =  "trial %d %s   "%(trialdata['trial'],trialdata['type'])
+    trialinfo += ("targ: %.2f   mov: %.2f   rot: %.2f deg;   ff: %s\n"%(trialdata['target.direction'],trialdata['mov.direction'],trialdata['cursor.rotation'],trialdata['force.field']))
     print('\n\n\n### TRIAL %d %s ####'%(trialdata['trial'],trialdata['type']))
     print(trialinfo)
     gui['trialinfo'].set(trialinfo)
@@ -538,6 +539,16 @@ def start_move_controller(trialdata):
 
 
 
+
+def draw_line(surf,fromp,top,col,width):
+    """ Draw a line from a particular point to another point, in robot coordinates."""
+    fromr = robot_to_screen(fromp[0],fromp[1],conf)
+    tor   = robot_to_screen(top[0],  top[1]  ,conf)
+    pygame.draw.line(surf,col,fromr,tor,width)
+
+    
+
+        
 def review_plot():
     """ Make a plot of the trajectory we recorded from the robot."""
 
@@ -560,6 +571,8 @@ def review_plot():
 
     if 'movement_position' in trialdata and trialdata['movement_position']:
         draw_ball(plot,trialdata['movement_position'],conf['cursor_radius'],conf['passive_cursor_colour'])
+        if trialdata['type'] in ['passive','pinpoint']:
+            draw_line(plot,conf['robot_center'],trialdata['movement_position'],conf['passive_cursor_colour'],conf['review_passive_width'])
         
         
     if 'captured' in trialdata and len(trialdata['captured'])>0: # if there is actually something captured
