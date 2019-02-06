@@ -153,9 +153,12 @@ conf['stay_duration']=1 # how long to stay "out there" in between forward and ba
 
 
 # The review panel that shows you the subject's movement
-conf['review_trajectory_colour']=(255,255,255)
-conf['review_rotated_colour']=(0,255,0)
-conf['review_linewidth']=3
+conf['review_trajectory_colour'] =(255,255,255)
+conf['review_rotated_colour']    =(0,255,0)
+conf['review_linewidth']         =3
+conf['review_force_scale']       =.01 # scale from N to m, just for display purposes
+conf['review_force_colour']      =(120,0,0)
+conf['review_force_width']       =2
 
 
 # How much curl to use
@@ -514,12 +517,14 @@ def record_plot():
     if not 'captured' in trialdata:
         print("Nothing captured")
         return
-    
-    traj = [ (x,y) for (x,y) in trialdata['captured'] ] # a little trick to "make a copy"
+
+    traj = [ (x,y,fx,fy,fz) for (x,y,fx,fy,fz) in trialdata['captured'] ] # make a copy, which seems to be a good idea here
     if len(traj)==0:
         print("Captured 0 samples")
         return
     # Just resample a little bit, so that the drawing will consume less resources
+
+    #print(traj)
     traj = traj[ ::10 ]
     
     #trajx,trajy = zip(*traj) # unzip!
@@ -533,13 +538,21 @@ def record_plot():
         col = get_target_colour()
         draw_ball(plot,trialdata['target_position'],conf['target_radius'],col)
 
+    # Draw the forces also (how cool is that)
+    for (x,y,fx,fy,_) in traj[::5]: # further subsampling also
+        sx,sy = robot_to_screen(x,y,conf)
+        tx,ty = robot_to_screen(x+conf['review_force_scale']*fx,
+                                y+conf['review_force_scale']*fy,
+                                conf)
+        pygame.draw.line(plot,conf['review_force_colour'],(sx,sy),(tx,ty),conf['review_force_width'])
+        
     # Draw the actual positions
-    points = [ robot_to_screen(x,y,conf) for x,y in traj ]
+    points = [ robot_to_screen(x,y,conf) for x,y,_,_,_ in traj ]
     pygame.draw.lines(plot,conf['review_trajectory_colour'],False,points,conf['review_linewidth'])
-
+    
     # Draw the corresponding cursor display
     if trialdata['cursor.rotation']!=0 and not np.isnan(trialdata['cursor.rotation']):
-        rottraj = [ rotate((x,y),deg2rad(trialdata['cursor.rotation']),conf['robot_center']) for x,y in traj ]
+        rottraj = [ rotate((x,y),deg2rad(trialdata['cursor.rotation']),conf['robot_center']) for x,y,_,_,_ in traj ]
         points = [ robot_to_screen(x,y,conf) for (x,y) in rottraj ]
         pygame.draw.lines(plot,conf['review_rotated_colour'],False,points,conf['review_linewidth'])
     
