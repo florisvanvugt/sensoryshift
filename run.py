@@ -157,8 +157,8 @@ conf['review_trajectory_colour'] =(255,255,255)
 conf['review_rotated_colour']    =(0,255,0)
 conf['review_linewidth']         =3
 conf['review_force_scale']       =.01 # scale from N to m, just for display purposes
-conf['review_force_colour']      =(120,0,0)
-conf['review_force_width']       =2
+conf['review_force_colour']      =(255,0,0)
+conf['review_force_width']       =3
 
 
 # How much curl to use
@@ -177,8 +177,8 @@ conf['min_joystick']= 0
 
 
 conf['use_mouse']=True
-#conf['mouse_device']='/dev/input/by-id/usb-Kensington_Kensington_USB_PS2_Orbit-mouse'
-conf['mouse_device']='/dev/input/by-id/usb-Microsoft_Microsoft_5-Button_Mouse_with_IntelliEye_TM_-mouse'
+conf['mouse_device']='/dev/input/by-id/usb-Kensington_Kensington_USB_PS2_Orbit-mouse'
+#conf['mouse_device']='/dev/input/by-id/usb-Microsoft_Microsoft_5-Button_Mouse_with_IntelliEye_TM_-mouse'
 conf['mouse_selector_tick']=.0005 # how much to change the selector (range 0..1) for one mouse 'tick' (this determines the maximum precision)
 
 
@@ -494,19 +494,19 @@ def start_move_controller(trialdata):
         # This will be a channel trial between the start point and the target
         robot.wshm('plg_p1x',conf['robot_center_x'])
         robot.wshm('plg_p1y',conf['robot_center_y'])
-        tx,ty= conf['target_position']
+        tx,ty= trialdata['target_position']
         robot.wshm('plg_p2x',tx)
         robot.wshm('plg_p2y',ty)
-        wshm("plg_channel_width", 0.0)
-        wshm("plg_stiffness", conf['channel_stiffness'])
-        wshm("plg_damping", conf['channel_damping'])
+        robot.wshm("plg_channel_width", 0.0)
+        robot.wshm("plg_stiffness", conf['channel_stiffness'])
+        robot.wshm("plg_damping", conf['channel_damping'])
         robot.controller(15)
 
     if trialdata['force.field']=='curl':
         #print("Activating curl controller, curl=%.2f"%ffval)
         ffval = conf['force_field_curl']
         if ffval > 18: ffval = 18 # for safety
-        wshm("curl",ffval)
+        robot.wshm("curl",ffval)
         robot.controller(17)
     
 
@@ -539,7 +539,7 @@ def record_plot():
         draw_ball(plot,trialdata['target_position'],conf['target_radius'],col)
 
     # Draw the forces also (how cool is that)
-    for (x,y,fx,fy,_) in traj[::5]: # further subsampling also
+    for (x,y,fx,fy,_) in traj[::3]: # further subsampling also
         sx,sy = robot_to_screen(x,y,conf)
         tx,ty = robot_to_screen(x+conf['review_force_scale']*fx,
                                 y+conf['review_force_scale']*fy,
@@ -993,6 +993,8 @@ def load_robot():
     tkMessageBox.showinfo("Robot", "Now we will zero the force transducers.\nAsk the subject to let go of the handle." )
     robot.zeroft()
     bias = robot.bias_report()
+    global trialdata
+    trialdata['bias']=bias
     tkMessageBox.showinfo("Robot", "Robot FT bias calibration done.\nYou can tell the subject to hold the handle again.\n\nRobot bias settings:\n\n" +" ".join([ str(b) for b in bias ]))
     gui["loaded"]=True
     update_ui()
