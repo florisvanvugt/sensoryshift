@@ -178,8 +178,8 @@ conf['min_joystick']= 0
 
 
 conf['use_mouse']=True
-#conf['mouse_device']='/dev/input/by-id/usb-Kensington_Kensington_USB_PS2_Orbit-mouse'
-conf['mouse_device']='/dev/input/by-id/usb-Microsoft_Microsoft_5-Button_Mouse_with_IntelliEye_TM_-mouse'
+conf['mouse_device']='/dev/input/by-id/usb-Kensington_Kensington_USB_PS2_Orbit-mouse'
+#conf['mouse_device']='/dev/input/by-id/usb-Microsoft_Microsoft_5-Button_Mouse_with_IntelliEye_TM_-mouse'
 conf['mouse_selector_tick']=.0005 # how much to change the selector (range 0..1) for one mouse 'tick' (this determines the maximum precision)
 
 
@@ -208,7 +208,7 @@ conf['phases']=['init',
                 'ask'
 ]
 
-
+conf['python']=[sys.executable,sys.version,sys.prefix,sys.exec_prefix]
 
 # Data that is specific to this trial
 trialdata = {}
@@ -432,6 +432,7 @@ def start_new_trial():
 
     sched = current_schedule() # Retrieve the current schedule
     trialdata['timestamp']       =time.time()
+    trialdata['schedule.number'] =trialdata['current_schedule']
     trialdata['trial']           =sched['trial'] # trial number
     trialdata['type']            =sched['type']
     trialdata['target.direction']=sched['target.direction']  # display angle of the target
@@ -900,7 +901,7 @@ def init_logs():
 def write_logs():
     """ At the end of a trial, write into the log. """
     hist = {}
-    for k in ['type','target.direction','mov.direction','cursor.rotation','target_position','cursor_position','t.phase','selector_angle','selector_prop','selector_history','selector_initial','captured','overshoot_answer','movement_overshoot']:
+    for k in ['type','target.direction','mov.direction','cursor.rotation','target_position','cursor_position','t.phase','selector_angle','selector_prop','selector_history','selector_initial','captured','overshoot_answer','movement_overshoot','trial','schedule.number']:
         v = trialdata.get(k,np.nan)
         if isinstance(v,np.ndarray):
             v = v.tolist()
