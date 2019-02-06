@@ -33,6 +33,7 @@ if PYTHON3: # this really is tested on Python 3 so please use that
     from tkinter import messagebox
 
 else: # python2
+    print("## WARNING: don't use Python 2. This code is designed for Python 3.")
     from Tkinter import * # use for python2
     import tkMessageBox
     from Tkinter import filedialog
@@ -177,8 +178,8 @@ conf['min_joystick']= 0
 
 
 conf['use_mouse']=True
-conf['mouse_device']='/dev/input/by-id/usb-Kensington_Kensington_USB_PS2_Orbit-mouse'
-#conf['mouse_device']='/dev/input/by-id/usb-Microsoft_Microsoft_5-Button_Mouse_with_IntelliEye_TM_-mouse'
+#conf['mouse_device']='/dev/input/by-id/usb-Kensington_Kensington_USB_PS2_Orbit-mouse'
+conf['mouse_device']='/dev/input/by-id/usb-Microsoft_Microsoft_5-Button_Mouse_with_IntelliEye_TM_-mouse'
 conf['mouse_selector_tick']=.0005 # how much to change the selector (range 0..1) for one mouse 'tick' (this determines the maximum precision)
 
 
@@ -486,6 +487,7 @@ def start_move_controller(trialdata):
     robot.wshm('fvv_vmax_y',0)
     robot.wshm('fvv_vel_low_timer',0)
     robot.wshm('fvv_subject_move_phase',1) # signal that this is the subject move phase
+    robot.wshm('traj_count',0)
 
     if trialdata['force.field']=='none':
         robot.controller(conf['move_controller'])
@@ -698,7 +700,9 @@ def mainloop():
         if phase_is('move'):
             if robot.rshm('fvv_move_done'): # this is the signal from the move controller that the subject has stopped moving
                 robot.stay()
-                trialdata['captured'] = robot.stop_background_capture() # stop capturing in the background and retrieve the trajectory
+                capt = robot.stop_background_capture() # stop capturing and return what we have captured
+                trialdata['captured'] = [ (x,y,fx,fy,fz) for (x,y,fx,fy,fz) in capt ] # make a copy, which seems to be a good idea here, otherwise I had issues when saving to pickle for example
+                
                 # Read the position at peak velocity
                 for vr in ['vmax_x','vmax_y','final_x','final_y','max_vel']:
                     trialdata[vr]=robot.rshm('fvv_%s'%vr)
