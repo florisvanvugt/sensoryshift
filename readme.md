@@ -50,8 +50,8 @@ To do visual no-feedback trials, simply set the `cursor.rotation` field to NA.
 
 Every block starts in `init`.
 
-  * Passive trials `init -> return -> forward -> backward -> (ask) -> completed`
-  * Pinpoint trials `init -> return -> forward -> backward -> select -> completed`
+  * Passive trials `init -> return -> pause -> forward -> backward -> (ask) -> completed`
+  * Pinpoint trials `init -> return -> pause -> forward -> backward -> select -> completed`
   * Active trials `init -> return -> fade -> move -> hold -> completed`
 
 

@@ -185,6 +185,8 @@ conf['mouse_device']='/dev/input/by-id/usb-Kensington_Kensington_USB_PS2_Orbit-m
 conf['mouse_selector_tick']=-.0005 # how much to change the selector (range 0..1) for one mouse 'tick' (this determines the maximum precision)
 
 
+conf['pause_duration']=.5 # how long to hold at start when returning from the previous trial.
+
 
 # The controller that can be used for the fade duration
 conf['fade_controller'] = 5
@@ -198,6 +200,7 @@ conf['move_controller'] = 6
 # Note that these phase numbers are not necessarily incremental...
 conf['phases']=['init',
                 'return',
+                'pause',
                 'forward',
                 'backward',
                 'completed',
@@ -661,6 +664,12 @@ def mainloop():
 
         if phase_is('return'):
             if robot.move_is_done(): # if we are back at the starting point
+                robot.stay()
+                next_phase('pause')
+                trialdata['pause.until.t']=trialdata['t.absolute']+conf['pause_duration']
+
+        if phase_is('pause'):
+            if trialdata['t.absolute']>trialdata.get('pause.until.t',0): # if the hold time is expired
                 if schedule['type'] in ['passive','pinpoint','active']:
 
                     # Determine the angle of the display target
