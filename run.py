@@ -123,7 +123,7 @@ conf['movement_radius']=.15 # meters
 conf['min_movement_radius']=.75*conf['movement_radius'] # meters; the minimum distance a subject must have travelled before we can call the end of the movement based on peak velocity
 
 conf['target_overshoot_SD']=.01 # in meters, the SD of the overshoot/undershoot of the target in passive trials
-conf['target_overshoot_ask_p']=.99 # percentage of passive trials where we will randomly ask whether the cursor overshot or not
+conf['target_overshoot_ask_p']=.25 # percentage of passive trials where we will randomly ask whether the cursor overshot or not
 
 
 conf['robot_center']= (0,-.05) # robot center position
@@ -140,8 +140,10 @@ conf['arc_thickness']     = .001 # how thick to draw the 'selector' arc
 conf['arc_colour']        = (80,80,80) # colour of the arc selector
 
 
-conf['selector_radius']=.005 # the radius of the selector ball that is controlled by the joystick
-conf['selector_colour']=(100,100,255)
+conf['selector_radius']=.002 # the radius of the selector ball that is controlled by the joystick (in m)
+conf['selector_colour']=(255,0,0)
+conf['selector_length']=.01 # the half length of the selector line (in m)
+conf['selector_width']=4 # the width of the selector (in pixels)
 
 
 # How long to take for the return movement
@@ -180,7 +182,7 @@ conf['min_joystick']= 0
 conf['use_mouse']=True
 conf['mouse_device']='/dev/input/by-id/usb-Kensington_Kensington_USB_PS2_Orbit-mouse'
 #conf['mouse_device']='/dev/input/by-id/usb-Microsoft_Microsoft_5-Button_Mouse_with_IntelliEye_TM_-mouse'
-conf['mouse_selector_tick']=.0005 # how much to change the selector (range 0..1) for one mouse 'tick' (this determines the maximum precision)
+conf['mouse_selector_tick']=-.0005 # how much to change the selector (range 0..1) for one mouse 'tick' (this determines the maximum precision)
 
 
 
@@ -255,8 +257,13 @@ def draw_arc_selector():
     
     if 'selector_angle' in trialdata:
         #print(conf['selector_position'])
-        pos = position_from_angle(conv_ang(trialdata['selector_angle']))
-        draw_ball(conf['screen'],pos,conf['selector_radius'],conf['selector_colour'])
+        sx,sy=position_from_angle(conv_ang(trialdata['selector_angle']),conf['movement_radius']-conf['selector_length'])
+        shortpos = robot_to_screen(sx,sy,conf)
+        lx,ly=position_from_angle(conv_ang(trialdata['selector_angle']),conf['movement_radius']+conf['selector_length'])
+        longpos  = robot_to_screen(lx,ly,conf)
+        pygame.draw.line(conf['screen'],conf['selector_colour'],shortpos,longpos,conf['selector_width'])
+        #pos = 
+        #draw_ball(conf['screen'],pos,conf['selector_radius'],conf['selector_colour'])
         
 
     
@@ -954,7 +961,7 @@ def read_schedule_file():
     schedule = []
     for i,row in s.iterrows():
         row = dict(row)
-        print(row['force.field'])
+        #print(row['force.field'])
         row['force.field']=row['force.field'].strip().lower()
         if not row['force.field'] in ['none','curl','channel']:
             print("## ERROR: unknown force field value %s"%row['force.field'])
