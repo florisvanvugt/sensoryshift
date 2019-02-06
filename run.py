@@ -31,6 +31,7 @@ if PYTHON3: # this really is tested on Python 3 so please use that
     from tkinter import filedialog
     import tkinter.simpledialog as tksd
     from tkinter import messagebox
+    import tkinter.ttk as ttk
 
 else: # python2
     print("## WARNING: don't use Python 2. This code is designed for Python 3.")
@@ -49,7 +50,7 @@ from mouse import *
 
 
 # The little control window
-CONTROL_WIDTH,CONTROL_HEIGHT= 600,650 #1000,800 #450,400 # control window dimensions
+CONTROL_WIDTH,CONTROL_HEIGHT= 600,700 #1000,800 #450,400 # control window dimensions
 CONTROL_X,CONTROL_Y = 500,50 # controls where on the screen the control window appears
 
 
@@ -180,8 +181,8 @@ conf['min_joystick']= 0
 
 
 conf['use_mouse']=True
-conf['mouse_device']='/dev/input/by-id/usb-Kensington_Kensington_USB_PS2_Orbit-mouse'
-#conf['mouse_device']='/dev/input/by-id/usb-Microsoft_Microsoft_5-Button_Mouse_with_IntelliEye_TM_-mouse'
+#conf['mouse_device']='/dev/input/by-id/usb-Kensington_Kensington_USB_PS2_Orbit-mouse'
+conf['mouse_device']='/dev/input/by-id/usb-Microsoft_Microsoft_5-Button_Mouse_with_IntelliEye_TM_-mouse'
 conf['mouse_selector_tick']=-.0005 # how much to change the selector (range 0..1) for one mouse 'tick' (this determines the maximum precision)
 
 
@@ -233,11 +234,11 @@ def conv_ang(a):
 
     
 
-def draw_arc_selector():
+def draw_arc_selector(surf):
     """ Draw the arc on the screen along which the subjects can
     choose the felt position of the hand."""
 
-    conf['screen'].fill(conf['bgcolor'])
+    surf.fill(conf['bgcolor'])
 
     mna,mxa = conf['arc_range']
     minang,maxang = conv_ang(mna),conv_ang(mxa) # convert into usable angles
@@ -255,7 +256,7 @@ def draw_arc_selector():
 
     # And then plot a polygon!
     poly = [ robot_to_screen(ry,rz,conf) for (ry,rz) in points ]
-    pygame.draw.polygon( conf['screen'],conf['arc_colour'],poly)
+    pygame.draw.polygon( surf,conf['arc_colour'],poly)
 
     
     if 'selector_angle' in trialdata:
@@ -264,7 +265,7 @@ def draw_arc_selector():
         shortpos = robot_to_screen(sx,sy,conf)
         lx,ly=position_from_angle(conv_ang(trialdata['selector_angle']),conf['movement_radius']+conf['selector_length'])
         longpos  = robot_to_screen(lx,ly,conf)
-        pygame.draw.line(conf['screen'],conf['selector_colour'],shortpos,longpos,conf['selector_width'])
+        pygame.draw.line(surf,conf['selector_colour'],shortpos,longpos,conf['selector_width'])
         #pos = 
         #draw_ball(conf['screen'],pos,conf['selector_radius'],conf['selector_colour'])
         
@@ -414,7 +415,14 @@ def phase_in(phases):
 
 def start_new_trial():
     """ Initiate a new trial. """
-    if trialdata['current_schedule']==len(trialdata['schedule'])-1:
+    # Okay, if that wasn't the case, we can safely start our new trial
+    trialdata['current_schedule']+=1
+
+    gui['progress']['maximum'] =len(trialdata['schedule'])
+    gui['progress']['value']   =trialdata['current_schedule']
+    #gui['progress'].update()
+
+    if trialdata['current_schedule']==len(trialdata['schedule']):
         # Done the experiment!
         print("## BLOCK COMPLETED ##")
         robot.move_to(conf['robot_center_x'],conf['robot_center_y'],conf['return_duration'])
@@ -432,12 +440,10 @@ def start_new_trial():
         #with open(conf['obsvlog'],'w') as f:
         #    f.write(obsv)
 
+        gui['trialinfo'].set('Completed block')
         tkMessageBox.showinfo("Robot", "Block completed! Yay!")
         return
 
-
-    # Okay, if that wasn't the case, we can safely start our new trial
-    trialdata['current_schedule']+=1
 
 
     sched = current_schedule() # Retrieve the current schedule
@@ -447,15 +453,22 @@ def start_new_trial():
     trialdata['type']            =sched['type']
     trialdata['target.direction']=sched['target.direction']  # display angle of the target
     trialdata['mov.direction']   =sched['mov.direction']     # physical angle of movement
+    trialdata['movement_position']=None
     trialdata['cursor.rotation'] =sched['cursor.rotation']   # rotation applied to cursor before display
     trialdata['force.field']     =sched['force.field']       # the force field (if any)
+    trialdata['captured']        =[] # nothing captured
+    trialdata['review.shown']    =False
     #trialdata['position_history']=[] # start with a clean position history (we'll fill this up during active trials only)
 
     for v in ['vmax_x','vmax_y','final_x','final_y']:
         trialdata[v]=None
 
-    print("\n\n\n### TRIAL %d %s ###"%(trialdata['trial'],trialdata['type']))
-    print("    target: %.2f  movement: %.2f  rotation: %.2f deg    force field: %s\n"%(trialdata['target.direction'],trialdata['mov.direction'],trialdata['cursor.rotation'],trialdata['force.field']))
+    
+    trialinfo =  "trial %d %s "%(trialdata['trial'],trialdata['type'])
+    trialinfo += ("targ: %.2f mov: %.2f rot: %.2f deg; ff: %s\n"%(trialdata['target.direction'],trialdata['mov.direction'],trialdata['cursor.rotation'],trialdata['force.field']))
+    print('\n\n\n### TRIAL %d %s ####'%(trialdata['trial'],trialdata['type']))
+    print(trialinfo)
+    gui['trialinfo'].set(trialinfo)
     robot.wshm('fvv_trial_no',     trialdata['trial'])
 
     ## Return the robot to the center
@@ -525,20 +538,11 @@ def start_move_controller(trialdata):
 
 
 
-def record_plot():
+def review_plot():
     """ Make a plot of the trajectory we recorded from the robot."""
-    if not 'captured' in trialdata:
-        print("Nothing captured")
-        return
 
-    traj = [ (x,y,fx,fy,fz) for (x,y,fx,fy,fz) in trialdata['captured'] ] # make a copy, which seems to be a good idea here
-    if len(traj)==0:
-        print("Captured 0 samples")
+    if 'review.shown' in trialdata and trialdata['review.shown']:
         return
-    # Just resample a little bit, so that the drawing will consume less resources
-
-    #print(traj)
-    traj = traj[ ::10 ]
     
     #trajx,trajy = zip(*traj) # unzip!
     plot = pygame.Surface(conf['screensize'])
@@ -551,23 +555,41 @@ def record_plot():
         col = get_target_colour()
         draw_ball(plot,trialdata['target_position'],conf['target_radius'],col)
 
-    # Draw the forces also (how cool is that)
-    for (x,y,fx,fy,_) in traj[::3]: # further subsampling also
-        sx,sy = robot_to_screen(x,y,conf)
-        tx,ty = robot_to_screen(x+conf['review_force_scale']*fx,
-                                y+conf['review_force_scale']*fy,
-                                conf)
-        pygame.draw.line(plot,conf['review_force_colour'],(sx,sy),(tx,ty),conf['review_force_width'])
+    if trialdata['type']=='pinpoint':
+        draw_arc_selector(plot)
+
+    if 'movement_position' in trialdata and trialdata['movement_position']:
+        draw_ball(plot,trialdata['movement_position'],conf['cursor_radius'],conf['passive_cursor_colour'])
         
-    # Draw the actual positions
-    points = [ robot_to_screen(x,y,conf) for x,y,_,_,_ in traj ]
-    pygame.draw.lines(plot,conf['review_trajectory_colour'],False,points,conf['review_linewidth'])
-    
-    # Draw the corresponding cursor display
-    if trialdata['cursor.rotation']!=0 and not np.isnan(trialdata['cursor.rotation']):
-        rottraj = [ rotate((x,y),deg2rad(trialdata['cursor.rotation']),conf['robot_center']) for x,y,_,_,_ in traj ]
-        points = [ robot_to_screen(x,y,conf) for (x,y) in rottraj ]
-        pygame.draw.lines(plot,conf['review_rotated_colour'],False,points,conf['review_linewidth'])
+        
+    if 'captured' in trialdata and len(trialdata['captured'])>0: # if there is actually something captured
+
+        traj = [ (x,y,fx,fy,fz) for (x,y,fx,fy,fz) in trialdata['captured'] ] # make a copy, which seems to be a good idea here
+        if len(traj)==0:
+            print("Captured 0 samples")
+            return
+        # Just resample a little bit, so that the drawing will consume less resources
+
+        #print(traj)
+        traj = traj[ ::10 ]
+
+        # Draw the forces also (how cool is that)
+        for (x,y,fx,fy,_) in traj[::3]: # further subsampling also
+            sx,sy = robot_to_screen(x,y,conf)
+            tx,ty = robot_to_screen(x+conf['review_force_scale']*fx,
+                                    y+conf['review_force_scale']*fy,
+                                    conf)
+            pygame.draw.line(plot,conf['review_force_colour'],(sx,sy),(tx,ty),conf['review_force_width'])
+
+        # Draw the actual positions
+        points = [ robot_to_screen(x,y,conf) for x,y,_,_,_ in traj ]
+        pygame.draw.lines(plot,conf['review_trajectory_colour'],False,points,conf['review_linewidth'])
+
+        # Draw the corresponding cursor display
+        if trialdata['cursor.rotation']!=0 and not np.isnan(trialdata['cursor.rotation']):
+            rottraj = [ rotate((x,y),deg2rad(trialdata['cursor.rotation']),conf['robot_center']) for x,y,_,_,_ in traj ]
+            points = [ robot_to_screen(x,y,conf) for (x,y) in rottraj ]
+            pygame.draw.lines(plot,conf['review_rotated_colour'],False,points,conf['review_linewidth'])
     
     fname = '.sneak_peek.bmp'
     jpg = '.tmp.jpg'
@@ -583,7 +605,8 @@ def record_plot():
     trialdata['saved']=True
     gui["photo"]=PhotoImage(file=gif)
     gui["photolabel"].configure(image=gui["photo"])
-    
+
+    trialdata['review.shown'] = True # mark that we've shown the review for this trial, no need to do that again
 
 
 
@@ -726,8 +749,6 @@ def mainloop():
                 
                 next_phase('hold')
                 trialdata['hold.until.t']=trialdata['t.absolute']+conf['stay_duration']
-                # Plot the movement
-                record_plot()
 
         if phase_is('hold'):
             if trialdata['t.absolute']>trialdata.get('hold.until.t',0):
@@ -767,6 +788,7 @@ def mainloop():
         if phase_is('ask'):
             r = numpy.random.uniform()
             if r<conf['target_overshoot_ask_p']:
+                review_plot()
                 answer = messagebox.askyesno("Question","Did the cursor overshoot (YES) or undershoot (NO) the center of the target?")
                 trialdata['overshoot_answer']='overshoot' if answer else 'undershoot'
             next_phase('completed')
@@ -779,8 +801,8 @@ def mainloop():
 
 
         if phase_is('completed'):
+            review_plot()
             write_logs()
-
             start_new_trial()
             
         
@@ -806,7 +828,7 @@ def mainloop():
             
             if phase_is('select'): # If we are in the select phase
                 if 'selector_prop' in trialdata: selector_to_angle()
-                draw_arc_selector()
+                draw_arc_selector(conf['screen'])
 
             # For debug only: show veridical robot position
             if DEBUG:
@@ -1078,6 +1100,8 @@ def run():
         return
     conf['robot_center_x'] = centerx
     conf['robot_center']=(conf['robot_center_x'],conf['robot_center_y'])
+    robot.wshm('fvv_robot_center_x',conf['robot_center_x'])
+    robot.wshm('fvv_robot_center_y',conf['robot_center_y'])
 
     
     if not read_schedule_file():
@@ -1185,11 +1209,24 @@ def init_tk():
     runb.grid      (row=row,column=0,sticky=W,padx=10)
 
     b   = Button(f, text="pinpoint",             background="purple",foreground="black", command=pinpoint)
-    b.grid(row=row,column=1,sticky=W,padx=10)
+    #b.grid(row=row,column=1,sticky=W,padx=10)
     
     row += 1
     quitb.grid     (row=row,sticky=W,padx=10,pady=10)
 
+    row +=1
+    l = Label(f,text='Progress',fg='white',bg='black')
+    l.grid(row=row,column=0)
+    p = ttk.Progressbar(f, orient=HORIZONTAL,mode='determinate',value=0,maximum=100)
+    p['value']=0
+    p.grid(row=row,column=1,columnspan=2,sticky=W+N+E+S)
+    gui['progress'] = p
+
+    row +=1
+    gui["trialinfo"]  = StringVar()
+    gui["trialinfo"].set("Not running")
+    l = Label(f,textvariable=gui['trialinfo'],fg='yellow',bg='black')
+    l.grid(row=row,column=0,columnspan=3,sticky=W,pady=10,padx=10)
 
     row += 1
     gui["photo"]=PhotoImage(file='screenshot_base.gif')
