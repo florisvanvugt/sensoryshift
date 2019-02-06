@@ -11,8 +11,15 @@ Clone the robot repository (https://github.com/florisvanvugt/inmotionpy) and pla
 
 Run `screencalib.py` to ensure the mapping between robot positions and the screen is accurate.
 
-`make`
+```
+make
+```
 
+If you want to run using the dummy robot, use
+
+```
+make dummy
+```
 
 If you use the trackball as a selector, you will probably want to disable it in X (otherwise the subject hijacks your mouse cursor)
 
@@ -23,7 +30,7 @@ If you use the trackball as a selector, you will probably want to disable it in 
 Each block is controlled by a schedule file. This is a text file table where each row is one trial (see `schedule.csv` for an example).
 The `type` column tells you the type of a trial:
    * `passive` trial: take the subject out to a direction (specified by the `mov.direction` column) and showing a visual cursor, rotated by a number of degrees specified in `visual.rotation`.
-   * `pinpoint` trial: take the subject out to a direction specified by the `mov.direction` column, then back to the starting point, and then display an arc where the subjects can select where they feel their hand is.
+   * `pinpoint` trial: take the subject out to a direction specified by the `mov.direction` column, then back to the starting point, and then display an arc where the subjects can select where they feel their hand is. In a proportion of trials, we will ask the subjects whether the cursor overshot or undershot the target (this is just to ensure they pay attention to the cursor).
    * `active` trial: the subject can freely move to a direction, and sees a cursor, rotated by an amount specified in `visual.rotation`.
    
    
@@ -33,6 +40,7 @@ In the schedule file, there are various columns:
    * `target.direction`: the physical angle at which the target is displayed (not affected by any rotation)
    * `mov.direction`: the physical angle at which the subject hand will be moved (again, not affected by rotation)
    * `cursor.rotation`: the angle by which the visual cursor is rotated (where 0 rotation means the cursor follows the physical hand position).
+   * `force.field`: only meaningful for active trials, the possible values are `none`=null field, `curl`=curl force field, `channel`=force channel trial.
 
 To do visual no-feedback trials, simply set the `cursor.rotation` field to NA.
 
@@ -51,7 +59,7 @@ Every block starts in `init`.
 
 
 
-### Trackball Mouse input privileges
+# Trackball Mouse input privileges
 You need read privileges on the input devices.
 This can be achieved either manually but needs to be redone every time you log in to your computer:
 

@@ -40,6 +40,7 @@ else: # python2
     
 import json
 import pandas as pd
+from pandas.api.types import is_string_dtype
 
 
 
@@ -157,6 +158,11 @@ conf['review_rotated_colour']=(0,255,0)
 conf['review_linewidth']=3
 
 
+# How much curl to use
+conf['force_field_curl'] = 15 # N/(m/s)
+
+conf['channel_stiffness'] = -4000.0
+conf['channel_damping']   = 30.0
 
 
 # Range of the joystick values
@@ -427,13 +433,14 @@ def start_new_trial():
     trialdata['target.direction']=sched['target.direction']  # display angle of the target
     trialdata['mov.direction']   =sched['mov.direction']     # physical angle of movement
     trialdata['cursor.rotation'] =sched['cursor.rotation']   # rotation applied to cursor before display
-    trialdata['position_history']=[] # start with a clean position history (we'll fill this up during active trials only)
+    trialdata['force.field']     =sched['force.field']       # the force field (if any)
+    #trialdata['position_history']=[] # start with a clean position history (we'll fill this up during active trials only)
 
     for v in ['vmax_x','vmax_y','final_x','final_y']:
         trialdata[v]=None
 
     print("\n\n\n### TRIAL %d %s ###"%(trialdata['trial'],trialdata['type']))
-    print("    target: %.2f  movement: %.2f  rotation: %.2f deg\n"%(trialdata['target.direction'],trialdata['mov.direction'],trialdata['cursor.rotation']))
+    print("    target: %.2f  movement: %.2f  rotation: %.2f deg    force field: %s\n"%(trialdata['target.direction'],trialdata['mov.direction'],trialdata['cursor.rotation'],trialdata['force.field']))
     robot.wshm('fvv_trial_no',     trialdata['trial'])
 
     ## Return the robot to the center
@@ -462,16 +469,42 @@ def position_from_angle(a,radius=None):
 
 
 
-def start_move_controller():
-    robot.wshm('fvv_move_done',0) # we'll set this to one once the movement is completed
+def start_move_controller(trialdata):
+    """ Start the move phase """
+
+    # The variables below are set so that we can determine when the movement ends, namely
+    # by looking at the peak velocity profile.
     robot.wshm('fvv_robot_center_x',conf['robot_center_x'])
     robot.wshm('fvv_robot_center_y',conf['robot_center_y'])
+    robot.wshm('fvv_move_done',0) # we'll set this to one once the movement is completed
     robot.wshm('fvv_min_dist',conf['min_movement_radius'])
     robot.wshm('fvv_max_vel',0)
     robot.wshm('fvv_vmax_x',0)
     robot.wshm('fvv_vmax_y',0)
     robot.wshm('fvv_vel_low_timer',0)
-    robot.controller(conf['move_controller'])
+    robot.wshm('fvv_subject_move_phase',1) # signal that this is the subject move phase
+
+    if trialdata['force.field']=='none':
+        robot.controller(conf['move_controller'])
+
+    if trialdata['force.field']=='channel':
+        # This will be a channel trial between the start point and the target
+        robot.wshm('plg_p1x',conf['robot_center_x'])
+        robot.wshm('plg_p1y',conf['robot_center_y'])
+        tx,ty= conf['target_position']
+        robot.wshm('plg_p2x',tx)
+        robot.wshm('plg_p2y',ty)
+        wshm("plg_channel_width", 0.0)
+        wshm("plg_stiffness", conf['channel_stiffness'])
+        wshm("plg_damping", conf['channel_damping'])
+        robot.controller(15)
+
+    if trialdata['force.field']=='curl':
+        #print("Activating curl controller, curl=%.2f"%ffval)
+        ffval = conf['force_field_curl']
+        if ffval > 18: ffval = 18 # for safety
+        wshm("curl",ffval)
+        robot.controller(17)
     
 
 
@@ -644,7 +677,7 @@ def mainloop():
 
         if phase_is('fade'):
             if trialdata['t.absolute']>trialdata.get('hold.until.t',0): # if the hold time is expired
-                start_move_controller()
+                start_move_controller(trialdata)
                 next_phase('move')
                 robot.wshm('fvv_trial_phase',5) # signal that we are moving
                 trialdata['redraw']=True
@@ -881,7 +914,6 @@ def close_logs():
 
 
 
-    
 
 def read_schedule_file():
     """ 
@@ -891,18 +923,29 @@ def read_schedule_file():
     print("Reading trial schedule file %s"%conf['schedulefile'])
 
     s = pd.read_csv(conf['schedulefile'],sep=',')
-    for c in ['trial','type','target.direction','mov.direction','cursor.rotation']:
+    for c in ['trial','type','target.direction','mov.direction','cursor.rotation','force.field']:
         if not c in s.columns:
             print("## ERROR: missing column %s in schedule."%c)
+            return False
 
+    if not is_string_dtype(s['force.field']):
+        print("## ERROR: force.field column has to be a string.")
+        return False
+        
     # I don't trust pandas so I prefer a simple data structure, list of dicts            
     schedule = []
     for i,row in s.iterrows():
+        row = dict(row)
+        print(row['force.field'])
+        row['force.field']=row['force.field'].strip().lower()
+        if not row['force.field'] in ['none','curl','channel']:
+            print("## ERROR: unknown force field value %s"%row['force.field'])
+            return False
         schedule.append(dict(row))
 
     trialdata['schedule'] = schedule
-    #experiment.ntrials = len([ tr for tr in trials if tr["type"]=="arctrace" ])
     print("Finished reading %i trials"%(len(trialdata['schedule'])))
+    return True
 
 
     
@@ -1000,14 +1043,16 @@ def run():
     conf['robot_center_x'] = centerx
     conf['robot_center']=(conf['robot_center_x'],conf['robot_center_y'])
 
+    
+    if not read_schedule_file():
+        tkMessageBox.showinfo("Error", "Error reading the schedule file. Please look at the terminal for the error message.")
+        return
 
     print("Running the experiment.")
     gui["running"]=True
     update_ui()
     
 
-    
-    read_schedule_file()
 
     conf['trialhistory']=[] # this is where we will keep info from all previous trials.
 
