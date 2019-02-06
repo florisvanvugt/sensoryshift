@@ -136,8 +136,8 @@ conf['robot_center_x'],conf['robot_center_y']=conf["robot_center"]  # just becau
 conf['arc_range']= (-45,45)
 
 conf['arc_draw_segments'] = 100 # how many segments to draw the arc (higher=more precision but takes more resources)
-conf['arc_thickness']     = .001 # how thick to draw the 'selector' arc
-conf['arc_colour']        = (80,80,80) # colour of the arc selector
+conf['arc_thickness']     = .002 # how thick to draw the 'selector' arc
+conf['arc_colour']        = (50,50,50) # colour of the arc selector
 
 
 conf['selector_radius']=.002 # the radius of the selector ball that is controlled by the joystick (in m)
