@@ -59,6 +59,7 @@ EXPERIMENT = "sensoryshift"
 
 
 numpy.random.seed() # make sure we're really random
+random.seed()
 
 # This is a global dict that holds all the configuration options. 
 # Using a single variable for them makes it easier to keep track.
@@ -164,6 +165,7 @@ conf['review_force_scale']       =.01 # scale from N to m, just for display purp
 conf['review_force_colour']      =(255,0,0)
 conf['review_force_width']       =3
 conf['review_passive_width']     =3 # width of the line of the passive point
+conf['review_passive_colour']    =(150,150,150)
 
 
 # How much curl to use
@@ -553,7 +555,7 @@ def review_plot():
     """ Make a plot of the trajectory we recorded from the robot."""
 
     if 'review.shown' in trialdata and trialdata['review.shown']:
-        return
+        return # Review has already been shown for this trial
     
     #trajx,trajy = zip(*traj) # unzip!
     plot = pygame.Surface(conf['screensize'])
@@ -569,11 +571,16 @@ def review_plot():
     if trialdata['type']=='pinpoint':
         draw_arc_selector(plot)
 
-    if 'movement_position' in trialdata and trialdata['movement_position']:
-        draw_ball(plot,trialdata['movement_position'],conf['cursor_radius'],conf['passive_cursor_colour'])
+    if 'movement_position' in trialdata and trialdata['movement_position']: # this is where the subject was moved to
+        draw_ball(plot,trialdata['movement_position'],conf['cursor_radius'],conf['review_passive_colour'])
         if trialdata['type'] in ['passive','pinpoint']:
-            draw_line(plot,conf['robot_center'],trialdata['movement_position'],conf['passive_cursor_colour'],conf['review_passive_width'])
-        
+            draw_line(plot,conf['robot_center'],trialdata['movement_position'],conf['review_passive_colour'],conf['review_passive_width'])
+
+        rotpos = rotate(trialdata['movement_position'],deg2rad(trialdata['cursor.rotation']),conf['robot_center'])
+        draw_ball(plot,rotpos,conf['cursor_radius'],conf['passive_cursor_colour'])
+        if trialdata['type'] in ['passive','pinpoint']:
+            draw_line(plot,conf['robot_center'],rotpos,conf['passive_cursor_colour'],conf['review_passive_width'])
+            
         
     if 'captured' in trialdata and len(trialdata['captured'])>0: # if there is actually something captured
 
