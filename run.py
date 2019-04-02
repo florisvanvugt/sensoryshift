@@ -610,7 +610,15 @@ def review_plot():
             rottraj = [ rotate((x,y),deg2rad(trialdata['cursor.rotation']),conf['robot_center']) for x,y,_,_,_ in traj ]
             points = [ robot_to_screen(x,y,conf) for (x,y) in rottraj ]
             pygame.draw.lines(plot,conf['review_rotated_colour'],False,points,conf['review_linewidth'])
-    
+
+    show_review(plot,trialdata)
+
+
+
+
+def show_review(plot,trialdata):
+    """ Given a pygame surface, show it in the review window."""
+    global gui
     fname = '.sneak_peek.bmp'
     jpg = '.tmp.jpg'
     gif = '.screenshot.gif'
@@ -627,8 +635,41 @@ def review_plot():
     gui["photolabel"].configure(image=gui["photo"])
 
     trialdata['review.shown'] = True # mark that we've shown the review for this trial, no need to do that again
+    
+    
 
 
+
+
+
+        
+def recognition_review(trialdata,hist):
+    """ Make a plot of the trajectory we recorded from the robot."""
+
+    plot = pygame.Surface(conf['screensize'])
+    plot.fill(conf['bgcolor'])
+
+    # Draw start position
+    cx,cy = conf['robot_center']
+    draw_ball(plot,(cx,cy),conf['center_marker_radius'],conf['center_marker_colour'])
+
+    # For reference, draw straight ahead as well
+    tpos =position_from_angle(conv_ang(0))
+    draw_ball(plot,tpos,conf['center_marker_radius'],conf['center_marker_colour'])
+
+    # Draw the two movement directions
+    colors = {'A':(255,0,0),'B':(0,255,0)}
+    for dr in ['A','B']:
+        pos = hist['direction{}.xy'.format(dr)]
+        points = [ robot_to_screen(x,y,conf) for (x,y) in [(cx,cy),pos]]
+        pygame.draw.lines(plot,colors[dr],False,points,3)
+        draw_ball(plot,pos,conf['target_radius'],colors[dr])
+
+    show_review(plot,trialdata)
+
+
+
+    
 
 
 def get_target_colour():
@@ -1217,6 +1258,7 @@ def recognitiontest():
             hist['direction{}'   .format(directionlabel)]=angle
             hist['direction{}.xy'.format(directionlabel)]=tx,ty
 
+        recognition_review(trialdata,hist)
         answer = messagebox.askyesno("Question","Was it the first (YES) or second (NO) movement?")
         hist['answer']='A' if answer else 'B'
         hist['end.t']=time.time()-t0
