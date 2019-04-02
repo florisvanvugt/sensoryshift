@@ -54,7 +54,7 @@ CONTROL_WIDTH,CONTROL_HEIGHT= 600,700 #1000,800 #450,400 # control window dimens
 CONTROL_X,CONTROL_Y = 500,50 # controls where on the screen the control window appears
 
 
-EXPERIMENT = "sensoryshift"
+EXPERIMENT = "recognitionrecall"
 
 
 
@@ -644,7 +644,18 @@ def get_target_colour():
     return conf['target_correct_colour']
 
 
+
+
+def in_start_zone(trialdata):
+    """ Tell us whether the robot handle is in the starting zone."""
+
+    # Compute how far we are from the starting zone
+    dstart = np.sqrt(pow(conf['robot_center_x']-trialdata['robot_x'],2)+pow(conf['robot_center_y']-trialdata['robot_y'],2))
+    return dstart<conf['center_marker_radius']
     
+
+
+
     
 def mainloop():
 
@@ -742,7 +753,7 @@ def mainloop():
                         next_phase('fade')
                         trialdata['hold.until.t']=trialdata['t.absolute']+conf['fade_duration']
 
-                        if DEBUG:
+                        if DEBUG: # in the debug mode, we will simulate a subject's movement (because we are not connected to the physical robot)
                             x,y=trialdata['target_position']
                             robot.preprogram_move_to(x,y,1.5)
                             robot.future.append({"fvv_max_vel":.46}) # send a max_vel value for testing
@@ -857,15 +868,20 @@ def mainloop():
             if phase_in(['forward','stay','fade','move']):
 
                 # Show a cursor
-                if trialdata['type'] in ['passive','active'] and not np.isnan(trialdata['cursor.rotation']):
+                showcursor = not np.isnan(trialdata['cursor.rotation']) # the signal to hide the cursor is setting cursor.rotation to NA
+                if trialdata['type'] in ['passive','active']:
                     if phase_is('fade'):
                         colour=conf['fade_cue_colour']
                     elif phase_is('move'):
                         colour = conf['active_cursor_colour']
                     else:
                         colour = conf['passive_cursor_colour']
+
                     trialdata['cursor_position']=rotate((trialdata['robot_x'],trialdata['robot_y']),deg2rad(trialdata['cursor.rotation']),conf['robot_center'])
-                    draw_ball(conf['screen'],trialdata['cursor_position'],conf['cursor_radius'],colour)
+                    # We show the cursor, but if the rotation is NA (i.e. no-feedback trial) then we only show it as long
+                    # as it's in the target zone.
+                    if showcursor or ( (trialdata['type']=='active') and in_start_zone(trialdata)): # or (trialdata['type']=='active' and phase_is('fade')):
+                        draw_ball(conf['screen'],trialdata['cursor_position'],conf['cursor_radius'],colour)
 
 
                 
@@ -1031,6 +1047,7 @@ def read_schedule_file():
 def update_ui():
     global gui
     gui["runb"].configure(state=DISABLED)
+    gui["recogb"].configure(state=DISABLED)
     gui["capturecenter"].configure(state=DISABLED)
 
     if gui["loaded"]:
@@ -1038,6 +1055,7 @@ def update_ui():
 
         if not gui["running"]:
             gui["runb"].configure(state=NORMAL)
+            gui["recogb"].configure(state=NORMAL)
             gui["capturecenter"].configure(state=NORMAL)
 
     else: # not loaded
@@ -1071,6 +1089,10 @@ def stop_running():
     gui['keep_going'] = False # this will bail out of the main loop
     time.sleep(1) # wait until some last commands may have stopped
     close_logs()
+    if 'thread' in conf and conf['thread']:
+        #conf['thread'].stop()
+        pass # cannot kill thread unfortunately...
+
     if gui['loaded']:
         robot.unload()
         gui["loaded"]=False
@@ -1081,12 +1103,140 @@ def end_program():
     """ When the user presses the quit button. """
     stop_running()
     ending()
+    master.destroy()
     sys.exit(0)
 
 
+def runrecog():
+    """ Run the recognition task"""
+    if gui["running"]:
+        return
     
-    
+    global conf
 
+    participant=gui["subject.id"].get().strip()
+    if participant=="":
+        tkMessageBox.showinfo("Error", "You need to enter a participant ID.")
+        return
+    conf['participant'] = participant
+
+    # Ask to open a schedule file
+    fn = filedialog.askopenfilename(filetypes = (("CSV files", "*.csv")
+                                                 ,("All files", "*.*") ))
+    if not fn or not len(fn):
+        print("No file selected.")
+        return
+    schedulef = fn
+
+    print("Reading schedule file {}.".format(schedulef))
+    # Read the recognition script
+    s = pd.read_csv(schedulef,sep=',')
+    for c in ['trial','directionA','directionB']:
+        if not c in s.columns:
+            print("## ERROR: missing column %s in schedule file - is this really a recognition task schedule file?"%c)
+            return False
+
+    schedule = []
+    for i,row in s.iterrows():
+        row = dict(row)
+        schedule.append(row)
+    trialdata['schedule']=schedule
+
+    # Read the robot center
+    centerx=gui["centerv"].get().strip()
+    try:
+        centerx=float(centerx)
+    except:
+        tkMessageBox.showinfo("Error", "The center X location you entered is invalid: %s.\n\nIt has to be a floating number."%centerx)
+        return
+    conf['robot_center_x'] = centerx
+    conf['robot_center']=(conf['robot_center_x'],conf['robot_center_y'])
+    robot.wshm('fvv_robot_center_x',conf['robot_center_x'])
+    robot.wshm('fvv_robot_center_y',conf['robot_center_y'])
+
+    # Let's go!
+    print("Launching recognition test: {} trials.".format(len(schedule)))
+    gui["running"]=True
+    update_ui()
+
+    conf['thread']=Thread(target=recognitiontest)
+    conf['thread'].start()
+        
+
+
+def move_until_done(x,y,t):
+    robot.move_to(x,y,t)
+    while not robot.move_is_done():
+        time.sleep(.1)
+    return
+    
+    
+    
+def recognitiontest():
+    """ The main procedure for the recognition test."""
+    gui['running']=True
+    gui['keep_going']=True # be an optimist!
+
+    t0 = time.time()
+    
+    # Initialise log information
+    basedir = './data/%s'%conf['participant']
+    if not os.path.exists(basedir):
+        os.makedirs(basedir)
+    
+    timestamp = datetime.datetime.now().strftime("%d_%m.%Hh%Mm%S")
+    basename = '%s/%s_%s_%s'%(basedir,conf['participant'],EXPERIMENT,timestamp)
+    
+    cx,cy = conf['robot_center_x'],conf['robot_center_y']
+    move_until_done(cx,cy,conf['return_duration'])
+    robot.stay_at(cx,cy)
+    time.sleep(conf['pause_duration'])
+    
+    current_schedule = 0
+    history = []
+    gui['progress']['maximum'] =len(trialdata['schedule'])
+    for i,schedule in enumerate(trialdata['schedule']):
+        gui['progress']['value']   =i
+        gui['progress'].update()
+        trialdata['trial']=schedule['trial']
+        hist = {'trial':schedule['trial'],'start.t':time.time()-t0}
+        print("\n\n### Trial {} ###".format(trialdata['trial']))
+
+        for directionlabel in ['A','B']:
+            angle_deg = schedule['direction{}'.format(directionlabel)]
+            angle = conv_ang(angle_deg) # Compute conventional angle
+            tx,ty = position_from_angle(angle,conf['movement_radius'])
+            print("Moving to direction {} : {:.2f} deg -> ({:.2f},{:.2f})".format(directionlabel,angle_deg,tx,ty))
+            trialdata['movement_{}'.format(directionlabel)]=tx,ty
+            move_until_done(tx,ty,conf['passive_duration']) # move out to that direction
+            robot.stay_at(tx,ty)
+            time.sleep(conf['stay_duration'])
+            move_until_done(cx,cy,conf['return_duration']) # return to the center
+            robot.stay_at(cx,cy)
+            time.sleep(conf['pause_duration'])
+            hist['direction{}'   .format(directionlabel)]=angle
+            hist['direction{}.xy'.format(directionlabel)]=tx,ty
+
+        answer = messagebox.askyesno("Question","Was it the first (YES) or second (NO) movement?")
+        hist['answer']='A' if answer else 'B'
+        hist['end.t']=time.time()-t0
+        history.append(hist)
+
+        if not gui['keep_going']: return # This is if the user has pressed exit somehow
+
+    # TODO: save JSON
+    print(history)
+    jsonf = basename+"recognition.json"
+    def default(o): # A hack so that we can save int64
+        if isinstance(o, numpy.int64): return int(o)  
+        raise TypeError
+    with open(jsonf,'w') as f:
+        json.dump(history,f,default=default)
+    print("Results written to {}.".format(jsonf))
+    print ("Completed recognition test.")
+
+
+    
 
 def run():
     """ Do one run of the experiment. """
@@ -1189,6 +1339,7 @@ def init_tk():
     f = Frame(master,background='black')
     loadb   = Button(f, text="Load robot",                background="green",foreground="black", command=load_robot)
     runb    = Button(f, text="Run",                       background="blue", foreground="white", command=run)
+    recogb  = Button(f, text="Recognition",               background="purple",foreground="white", command=runrecog)
     quitb   = Button(f, text="Quit",                      background="red",foreground="black", command=end_program)
     
     gui["subject.id"] = StringVar()
@@ -1227,7 +1378,8 @@ def init_tk():
 
     row += 1
     runb.grid      (row=row,column=0,sticky=W,padx=10)
-
+    recogb.grid    (row=row,column=1,padx=10)
+    
     b   = Button(f, text="pinpoint",             background="purple",foreground="black", command=pinpoint)
     #b.grid(row=row,column=1,sticky=W,padx=10)
     
@@ -1257,6 +1409,7 @@ def init_tk():
     # Make some elements available for the future
     gui["loadb"]     =loadb
     gui["runb"]      =runb
+    gui['recogb']    =recogb
     gui["quitb"]     =quitb
     gui["keep_going"]=False
     gui["loaded"]    =False

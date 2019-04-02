@@ -138,6 +138,7 @@ def rotate(pts,ang,cnt):
     """ Rotate a point (x,y) in pts by a certain angle (in radians),
     around a certain pivot point (cnt) """
     # See e.g. http://gis.stackexchange.com/questions/23587/how-do-i-rotate-the-polygon-about-an-anchor-point-using-python-script
+    if np.isnan(ang): return pts
     pts = np.array(pts)
     cnt = np.array(cnt)
     #ang = -ang

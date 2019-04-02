@@ -7,7 +7,7 @@ This is built for the inmotion2 robot.
 
 # Usage
 
-Clone the robot repository (https://github.com/florisvanvugt/inmotionpy) and place its  subdirectory `robot` into the present repository.
+Clone the robot repository (https://github.com/florisvanvugt/inmotionpy) and place its subdirectory `robot` into the present repository.
 
 Run `screencalib.py` to ensure the mapping between robot positions and the screen is accurate.
 
@@ -39,7 +39,7 @@ Angles are specified in degrees relative to 0=straight ahead, and positive angle
 In the schedule file, there are various columns:
    * `target.direction`: the physical angle at which the target is displayed (not affected by any rotation)
    * `mov.direction`: the physical angle at which the subject hand will be moved (again, not affected by rotation)
-   * `cursor.rotation`: the angle by which the visual cursor is rotated (where 0 rotation means the cursor follows the physical hand position).
+   * `cursor.rotation`: the angle by which the visual cursor is rotated (where 0 rotation means the cursor follows the physical hand position). set this to `NA` if you want there to be no cursor.
    * `force.field`: only meaningful for active trials, the possible values are `none`=null field, `curl`=curl force field, `channel`=force channel trial.
 
 To do visual no-feedback trials, simply set the `cursor.rotation` field to NA.
@@ -88,6 +88,21 @@ udevadm info {device}
 (where `{device}` is the device node).
 
 
+
+
+# Recognition task
+
+We also implement a recognition task, where the subject passively feels two directions (A and B) and then is asked which is most similar to their own movement (on a previous day).
+
+For this, press the `Recognition` button, which will prompt you to open a recognition schedule CSV file. An example schedule is:
+
+```
+trial,directionA,directionB
+1,5,10
+2,-5,5
+```
+
+The directions are given in degrees as in the rest of the case.
 
 
 
