@@ -1111,6 +1111,7 @@ def load_robot():
     tkMessageBox.showinfo("Robot", "We will now load the robot.\n\nLook at the terminal because you may have to enter your sudo password there.")
 
     robot.load() # launches the robot C++ script
+    if DEBUG: robot.popup(master)
     # Then do zero FT
     tkMessageBox.showinfo("Robot", "Now we will zero the force transducers.\nAsk the subject to let go of the handle." )
     robot.zeroft()
@@ -1276,6 +1277,9 @@ def recognitiontest():
         json.dump(history,f,default=default)
     print("Results written to {}.".format(jsonf))
     print ("Completed recognition test.")
+    
+    gui['running']=False
+    update_ui()
 
 
     
