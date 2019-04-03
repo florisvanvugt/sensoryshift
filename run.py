@@ -183,7 +183,7 @@ conf['min_joystick']= 0
 
 
 
-conf['use_mouse']=True
+conf['use_mouse']=False
 #conf['mouse_device']='/dev/input/by-id/usb-Kensington_Kensington_USB_PS2_Orbit-mouse'
 conf['mouse_device']='/dev/input/by-id/usb-Microsoft_Microsoft_5-Button_Mouse_with_IntelliEye_TM_-mouse'
 conf['mouse_selector_tick']=-.0005 # how much to change the selector (range 0..1) for one mouse 'tick' (this determines the maximum precision)
