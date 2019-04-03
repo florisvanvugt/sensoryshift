@@ -189,7 +189,7 @@ conf['mouse_device']='/dev/input/by-id/usb-Microsoft_Microsoft_5-Button_Mouse_wi
 conf['mouse_selector_tick']=-.0005 # how much to change the selector (range 0..1) for one mouse 'tick' (this determines the maximum precision)
 
 
-conf['pause_duration']=.5 # how long to hold at start when returning from the previous trial.
+conf['pause_duration']=1.5 # how long to hold at start when returning from the previous trial.
 
 
 # The controller that can be used for the fade duration
@@ -1198,6 +1198,11 @@ def runrecog():
 
     # Let's go!
     print("Launching recognition test: {} trials.".format(len(schedule)))
+
+    # TODO: empty display
+    conf['screen'].fill(conf['bgcolor'])
+    pygame.display.flip()
+    
     gui["running"]=True
     update_ui()
 
@@ -1211,8 +1216,26 @@ def move_until_done(x,y,t):
     while not robot.move_is_done():
         time.sleep(.1)
     return
-    
-    
+
+
+def askoptions(message,options):
+    """ Display a window that asks for options """
+    win = Toplevel(master)
+    win.title('Question')
+    Label(win, text=message).pack()
+    global selected
+    selected = None
+    def finish(option):
+        global selected
+        print('selected {}'.format(option))
+        selected = option
+    for option in options:
+        Button(win, text=option, command=lambda option=option: finish(option)).pack()
+    while not selected:
+        time.sleep(.1)
+    win.destroy()
+    return selected
+        
     
 def recognitiontest():
     """ The main procedure for the recognition test."""
@@ -1260,8 +1283,8 @@ def recognitiontest():
             hist['direction{}.xy'.format(directionlabel)]=tx,ty
 
         recognition_review(trialdata,hist)
-        answer = messagebox.askyesno("Question","Was it the first (YES) or second (NO) movement?")
-        hist['answer']='A' if answer else 'B'
+        answer = askoptions("Was it the first or second movement?",['first','second'])
+        hist['answer']='A' if answer=='first' else 'B'
         hist['end.t']=time.time()-t0
         history.append(hist)
 
