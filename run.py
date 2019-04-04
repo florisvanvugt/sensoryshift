@@ -189,7 +189,8 @@ conf['mouse_device']='/dev/input/by-id/usb-Microsoft_Microsoft_5-Button_Mouse_wi
 conf['mouse_selector_tick']=-.0005 # how much to change the selector (range 0..1) for one mouse 'tick' (this determines the maximum precision)
 
 
-conf['pause_duration']=1.5 # how long to hold at start when returning from the previous trial.
+conf['pause_duration']=.5 # how long to hold at start when returning from the previous trial.
+conf['recog_pause_duration']=1.5 # how long to hold at start in between recognition passive movements
 
 
 # The controller that can be used for the fade duration
@@ -1090,6 +1091,7 @@ def update_ui():
     gui["runb"].configure(state=DISABLED)
     gui["recogb"].configure(state=DISABLED)
     gui["capturecenter"].configure(state=DISABLED)
+    gui["holdcenter"].configure(state=DISABLED)
 
     if gui["loaded"]:
         gui["loadb"].configure(state=DISABLED)
@@ -1098,6 +1100,7 @@ def update_ui():
             gui["runb"].configure(state=NORMAL)
             gui["recogb"].configure(state=NORMAL)
             gui["capturecenter"].configure(state=NORMAL)
+            gui["holdcenter"].configure(state=NORMAL)
 
     else: # not loaded
         gui["loadb"].configure(state=NORMAL)
@@ -1185,14 +1188,7 @@ def runrecog():
     trialdata['schedule']=schedule
 
     # Read the robot center
-    centerx=gui["centerv"].get().strip()
-    try:
-        centerx=float(centerx)
-    except:
-        tkMessageBox.showinfo("Error", "The center X location you entered is invalid: %s.\n\nIt has to be a floating number."%centerx)
-        return
-    conf['robot_center_x'] = centerx
-    conf['robot_center']=(conf['robot_center_x'],conf['robot_center_y'])
+    if not get_center(): return
     robot.wshm('fvv_robot_center_x',conf['robot_center_x'])
     robot.wshm('fvv_robot_center_y',conf['robot_center_y'])
 
@@ -1211,6 +1207,21 @@ def runrecog():
         
 
 
+
+def get_center():
+    """ Get the center X coordinate from the text entry box."""
+    centerx=gui["centerv"].get().strip()
+    try:
+        centerx=float(centerx)
+    except:
+        tkMessageBox.showinfo("Error", "The center X location you entered is invalid: %s.\n\nIt has to be a floating number."%centerx)
+        return
+    conf['robot_center_x'] = centerx
+    conf['robot_center']=(conf['robot_center_x'],conf['robot_center_y'])
+    return True
+    
+
+    
 def move_until_done(x,y,t):
     robot.move_to(x,y,t)
     while not robot.move_is_done():
@@ -1255,7 +1266,7 @@ def recognitiontest():
     cx,cy = conf['robot_center_x'],conf['robot_center_y']
     move_until_done(cx,cy,conf['return_duration'])
     robot.stay_at(cx,cy)
-    time.sleep(conf['pause_duration'])
+    time.sleep(conf['recog_pause_duration'])
     
     current_schedule = 0
     history = []
@@ -1278,7 +1289,7 @@ def recognitiontest():
             time.sleep(conf['stay_duration'])
             move_until_done(cx,cy,conf['return_duration']) # return to the center
             robot.stay_at(cx,cy)
-            time.sleep(conf['pause_duration'])
+            time.sleep(conf['recog_pause_duration'])
             hist['direction{}'   .format(directionlabel)]=angle
             hist['direction{}.xy'.format(directionlabel)]=tx,ty
 
@@ -1395,6 +1406,19 @@ def capture_center():
         
 
 
+def hold_center():
+    """ Hold the robot handle at the center position."""
+    if not get_center(): return
+    cx,cy = conf['robot_center_x'],conf['robot_center_y']
+    print("Holding at {},{}".format(cx,cy))
+    robot.move_to(cx,cy,conf['return_duration'])
+    while not robot.move_is_done():
+        time.sleep(.1)
+    robot.stay_at(cx,cy)
+    print("Holding indefinitely.")
+    return
+    
+
         
 
 def init_tk():
@@ -1444,7 +1468,10 @@ def init_tk():
     b   = Button(f, text="capture",                background="gray",foreground="black", command=capture_center)
     b.grid(row=row,column=2,sticky=W,padx=10)
     gui['capturecenter']=b
-
+    b   = Button(f, text="hold",                   background="gray",foreground="black", command=hold_center)
+    b.grid(row=row,column=3,sticky=W,padx=10)
+    gui['holdcenter']=b
+    
     row += 1
     runb.grid      (row=row,column=0,sticky=W,padx=10)
     recogb.grid    (row=row,column=1,padx=10)
