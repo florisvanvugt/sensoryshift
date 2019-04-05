@@ -604,13 +604,15 @@ def review_plot():
 
         # Draw the actual positions
         points = [ robot_to_screen(x,y,conf) for x,y,_,_,_ in traj ]
-        pygame.draw.lines(plot,conf['review_trajectory_colour'],False,points,conf['review_linewidth'])
+        if len(points):
+            pygame.draw.lines(plot,conf['review_trajectory_colour'],False,points,conf['review_linewidth'])
 
         # Draw the corresponding cursor display
         if trialdata['cursor.rotation']!=0 and not np.isnan(trialdata['cursor.rotation']):
             rottraj = [ rotate((x,y),deg2rad(trialdata['cursor.rotation']),conf['robot_center']) for x,y,_,_,_ in traj ]
             points = [ robot_to_screen(x,y,conf) for (x,y) in rottraj ]
-            pygame.draw.lines(plot,conf['review_rotated_colour'],False,points,conf['review_linewidth'])
+            if len(points):
+                pygame.draw.lines(plot,conf['review_rotated_colour'],False,points,conf['review_linewidth'])
 
     show_review(plot,trialdata)
 
@@ -711,7 +713,7 @@ def mainloop():
 
     while gui['keep_going']:
 
-        time.sleep(.001) # add a little breath
+        time.sleep(.0001) # add a little breath
         trialdata["t.absolute"] = time.time()
         trialdata["t.current"] = trialdata["t.absolute"]-trialdata['first.t']
         schedule = current_schedule()
@@ -809,9 +811,11 @@ def mainloop():
                 next_phase('move')
                 robot.wshm('fvv_trial_phase',5) # signal that we are moving
                 trialdata['redraw']=True
+                trialdata['t.move.start']=trialdata['t.absolute']
 
         if phase_is('move'):
-            if robot.rshm('fvv_move_done'): # this is the signal from the move controller that the subject has stopped moving
+            if robot.rshm('fvv_move_done'): # in active functioning mode
+                #if trialdata['t.absolute']>trialdata['t.move.start']+2 : # DEBUG ONLY robot.rshm('fvv_move_done'): # this is the signal from the move controller that the subject has stopped moving
                 robot.stay()
                 capt = robot.stop_background_capture() # stop capturing and return what we have captured
                 trialdata['captured'] = [ (x,y,fx,fy,fz) for (x,y,fx,fy,fz) in capt ] # make a copy, which seems to be a good idea here, otherwise I had issues when saving to pickle for example
