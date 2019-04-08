@@ -980,7 +980,8 @@ def init_logs():
         os.makedirs(basedir)
     
     timestamp = datetime.datetime.now().strftime("%d_%m.%Hh%Mm%S")
-    basename = '%s/%s_%s_%s'%(basedir,conf['participant'],EXPERIMENT,timestamp)
+    schedulestem = os.path.splitext(os.path.basename(conf['schedulefile']))[0]
+    basename = '%s/%s_%s_%s--%s--'%(basedir,conf['participant'],EXPERIMENT,timestamp,schedulestem)
         
     trajlog = '%strajectory.bin'%basename
     robot.start_log(trajlog,conf['N_ROBOT_LOG'])
