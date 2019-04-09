@@ -10,6 +10,8 @@ import numpy as np
 import random
 import datetime
 
+import h5py
+
 import scipy
     
 from threading import Thread
@@ -334,6 +336,7 @@ def hold_fade():
     
     
 def launch_mainloop():
+    #mainloop()
     conf['thread']=Thread(target=mainloop)
     conf['thread'].start()
     
@@ -690,6 +693,43 @@ def get_target_colour():
 
 
 
+def visual_error_clamp( pos, start, target):
+    """ 
+    Return the cursor display position in a visual error clamp trial.
+
+    pos : (x,y) tuple denoting current position
+    start : (x,y) tuple denoting the starting position
+    target : (x,y) tuple denoting the target position
+    """
+
+    pos    = np.array(pos)
+    start  = np.array(start)
+    target = np.array(target)
+
+    def d(a,b): return np.sqrt( sum(pow(a-b,2)) )
+    
+    # How far have we traveled from the starting point?
+    dist = d(pos,start) 
+
+    # TODO: if we are moving *away* from the target, we will want to make dist negative
+    dpostarg   = d(pos,target)
+    dstarttarg = d(start,target)
+    if dpostarg>dstarttarg:
+        dist=-dist # count this as moving away
+    
+    # Unit vector pointing from target to start
+    targvect = (target-start)/dstarttarg
+
+    # Now take that amount and apply it to the vector start-to-target
+    return start + dist*targvect
+
+    
+
+
+
+
+
+
 def in_start_zone(trialdata):
     """ Tell us whether the robot handle is in the starting zone."""
 
@@ -914,7 +954,7 @@ def mainloop():
             if phase_in(['forward','stay','fade','move']):
 
                 # Show a cursor
-                showcursor = not np.isnan(trialdata['cursor.rotation']) # the signal to hide the cursor is setting cursor.rotation to NA
+                showcursor = True # not np.isnan(trialdata['cursor.rotation']) # the signal to hide the cursor is setting cursor.rotation to NA
                 if trialdata['type'] in ['passive','active']:
                     if phase_is('fade'):
                         colour=conf['fade_cue_colour']
@@ -923,11 +963,20 @@ def mainloop():
                     else:
                         colour = conf['passive_cursor_colour']
 
-                    trialdata['cursor_position']=rotate((trialdata['robot_x'],trialdata['robot_y']),deg2rad(trialdata['cursor.rotation']),conf['robot_center'])
-                    # We show the cursor, but if the rotation is NA (i.e. no-feedback trial) then we only show it as long
+                    if np.isnan(trialdata['cursor.rotation']):
+                        trialdata['cursor_position']=visual_error_clamp( (trialdata['robot_x'],trialdata['robot_y']),
+                                                                         conf['robot_center'],
+                                                                         trialdata['target_position'] )
+                                                                        
+                    else:
+                        # Rotate the cursor by a specified amount
+                        trialdata['cursor_position']=rotate((trialdata['robot_x'],trialdata['robot_y']),
+                                                            deg2rad(trialdata['cursor.rotation']),conf['robot_center'])
+                    # OLD -- We show the cursor, but if the rotation is NA (i.e. no-feedback trial) then we only show it as long
                     # as it's in the target zone.
-                    if showcursor or ( (trialdata['type']=='active') and in_start_zone(trialdata)): # or (trialdata['type']=='active' and phase_is('fade')):
-                        draw_ball(conf['screen'],trialdata['cursor_position'],conf['cursor_radius'],colour)
+                    #if showcursor or ( (trialdata['type']=='active') and in_start_zone(trialdata)): # or (trialdata['type']=='active' and phase_is('fade')):
+                    # Always show the cursor
+                    draw_ball(conf['screen'],trialdata['cursor_position'],conf['cursor_radius'],colour)
 
 
                 
@@ -988,9 +1037,8 @@ def init_logs():
     gui["logging"]=True
 
     conf['captured'] = []
-    capturelog = '%scaptured.pickle27'%basename
+    #capturelog = '%scaptured.pickle27'%basename
     ##trajlog.write('participant experiment trial x y dx dy t t.absolute\n')
-
     
     dumplog = '%sdump.pickle'%basename
 
@@ -1013,7 +1061,7 @@ def init_logs():
 
     conf['trajlog']     = trajlog
     conf['dumpf']       = dumplog
-    conf['capturelog']  = capturelog
+    #conf['capturelog']  = capturelog
 
 
 
@@ -1029,6 +1077,10 @@ def write_logs():
         hist[k]=v
     conf['trialhistory'].append(hist)
     pickle.dump(conf['trialhistory'],open(conf['dumpf'],'wb')) # this will overwrite the previous file
+    #h5f = h5py.File(conf['dumpf'], 'w')
+    #for h in conf['trialhistory']:
+    #    h5f.create_dataset(h['trial'], data=h)
+    #h5f.close()
 
     conf['triallog'].write(trial_log())
     conf['triallog'].flush()
