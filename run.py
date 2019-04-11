@@ -1347,9 +1347,10 @@ def recognitiontest():
             move_until_done(cx,cy,conf['return_duration']) # return to the center
             robot.stay_at(cx,cy)
             time.sleep(conf['recog_pause_duration'])
-            hist['direction{}'   .format(directionlabel)]=angle
-            hist['type{}'        .format(directionlabel)]=schedule['type{}'.format(directionlabel)]
-            hist['direction{}.xy'.format(directionlabel)]=tx,ty
+            hist['direction{}'    .format(directionlabel)]=angle_deg
+            hist['direction{}_rad'.format(directionlabel)]=angle
+            hist['type{}'         .format(directionlabel)]=schedule['type{}'.format(directionlabel)]
+            hist['direction{}.xy' .format(directionlabel)]=tx,ty
 
         recognition_review(trialdata,hist)
         answer = askoptions("Was it the first or second movement?",['first','second'])
