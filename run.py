@@ -1233,7 +1233,7 @@ def runrecog():
     print("Reading schedule file {}.".format(schedulef))
     # Read the recognition script
     s = pd.read_csv(schedulef,sep=',')
-    for c in ['trial','directionA','directionB']:
+    for c in ['trial','directionA','directionB','typeA','typeB']:
         if not c in s.columns:
             print("## ERROR: missing column %s in schedule file - is this really a recognition task schedule file?"%c)
             return False
@@ -1348,6 +1348,7 @@ def recognitiontest():
             robot.stay_at(cx,cy)
             time.sleep(conf['recog_pause_duration'])
             hist['direction{}'   .format(directionlabel)]=angle
+            hist['type{}'        .format(directionlabel)]=schedule['type{}'.format(directionlabel)]
             hist['direction{}.xy'.format(directionlabel)]=tx,ty
 
         recognition_review(trialdata,hist)

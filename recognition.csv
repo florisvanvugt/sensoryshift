@@ -1,3 +1,4 @@
-trial,directionA,directionB
-1,5,10
-2,-5,5
+directionA,directionB,trial,typeA,typeB
+-24.29754929334177,-24.855013188126122,1,ec_train_dir,ec_Day1Recall_dir
+-21.145593325963503,-8.141878586062903,2,ec_train_dir,ec_Day2Predict_dir
+-23.31345187377392,-9.094160106322843,3,ec_Day1Recall_dir,ec_Day2Predict_dir
