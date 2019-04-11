@@ -1316,10 +1316,10 @@ def recognitiontest():
     basedir = './data/%s'%conf['participant']
     if not os.path.exists(basedir):
         os.makedirs(basedir)
-    
     timestamp = datetime.datetime.now().strftime("%d_%m.%Hh%Mm%S")
     basename = '%s/%s_%s_%s'%(basedir,conf['participant'],EXPERIMENT,timestamp)
-    
+    jsonf = basename+"recognition.json" # where we will save the data
+
     cx,cy = conf['robot_center_x'],conf['robot_center_y']
     move_until_done(cx,cy,conf['return_duration'])
     robot.stay_at(cx,cy)
@@ -1356,23 +1356,29 @@ def recognitiontest():
         hist['answer']='A' if answer=='first' else 'B'
         hist['end.t']=time.time()-t0
         history.append(hist)
+        savejson(history,jsonf)
 
         if not gui['keep_going']: return # This is if the user has pressed exit somehow
 
-    # TODO: save JSON
     print(history)
-    jsonf = basename+"recognition.json"
-    def default(o): # A hack so that we can save int64
-        if isinstance(o, numpy.int64): return int(o)  
-        raise TypeError
-    with open(jsonf,'w') as f:
-        json.dump(history,f,default=default)
+    savejson(history,jsonf)
     print("Results written to {}.".format(jsonf))
     print ("Completed recognition test.")
     
     gui['running']=False
     update_ui()
 
+
+
+def savejson(history,jsonf):
+    """ Write the history of the recognition task
+    to the json file."""
+    def default(o): # A hack so that we can save int64
+        if isinstance(o, numpy.int64): return int(o)  
+        raise TypeError
+    with open(jsonf,'w') as f:
+        json.dump(history,f,default=default)
+    
 
     
 
