@@ -664,13 +664,13 @@ def recognition_review(trialdata,hist):
     draw_ball(plot,tpos,conf['center_marker_radius'],conf['center_marker_colour'])
 
     # Draw the two movement directions
-    colors = {'A':(255,0,0),'B':(0,255,0)}
-    for dr in ['A','B']:
-        pos = hist['direction{}.xy'.format(dr)]
-        points = [ robot_to_screen(x,y,conf) for (x,y) in [(cx,cy),pos]]
-        pygame.draw.lines(plot,colors[dr],False,points,3)
-        draw_ball(plot,pos,conf['target_radius'],colors[dr])
-
+    #colors = {'A':(255,0,0),'B':(0,255,0)}
+    col = (255,255,0)
+    pos = hist['direction.xy']
+    points = [ robot_to_screen(x,y,conf) for (x,y) in [(cx,cy),pos]]
+    pygame.draw.lines(plot,col,False,points,3)
+    draw_ball(plot,pos,conf['target_radius'],col)
+    
     show_review(plot,trialdata)
 
 
@@ -1233,9 +1233,9 @@ def runrecog():
     print("Reading schedule file {}.".format(schedulef))
     # Read the recognition script
     s = pd.read_csv(schedulef,sep=',')
-    for c in ['trial','directionA','directionB','typeA','typeB']:
+    for c in ['trial','direction','type']:
         if not c in s.columns:
-            print("## ERROR: missing column %s in schedule file - is this really a recognition task schedule file?"%c)
+            print("## ERROR: missing column %s in schedule file - is this really a yes/no recognition task schedule file?"%c)
             return False
 
     schedule = []
@@ -1250,7 +1250,7 @@ def runrecog():
     robot.wshm('fvv_robot_center_y',conf['robot_center_y'])
 
     # Let's go!
-    print("Launching recognition test: {} trials.".format(len(schedule)))
+    print("Launching recognition yes/no test: {} trials.".format(len(schedule)))
 
     # TODO: empty display
     conf['screen'].fill(conf['bgcolor'])
@@ -1318,7 +1318,7 @@ def recognitiontest():
         os.makedirs(basedir)
     timestamp = datetime.datetime.now().strftime("%d_%m.%Hh%Mm%S")
     basename = '%s/%s_%s_%s'%(basedir,conf['participant'],EXPERIMENT,timestamp)
-    jsonf = basename+"recognition.json" # where we will save the data
+    jsonf = basename+"recognition_yesno.json" # where we will save the data
 
     cx,cy = conf['robot_center_x'],conf['robot_center_y']
     move_until_done(cx,cy,conf['return_duration'])
@@ -1335,26 +1335,25 @@ def recognitiontest():
         hist = {'trial':schedule['trial'],'start.t':time.time()-t0}
         print("\n\n### Trial {} ###".format(trialdata['trial']))
 
-        for directionlabel in ['A','B']:
-            angle_deg = schedule['direction{}'.format(directionlabel)]
-            angle = conv_ang(angle_deg) # Compute conventional angle
-            tx,ty = position_from_angle(angle,conf['movement_radius'])
-            print("Moving to direction {} : {:.2f} deg -> ({:.2f},{:.2f})".format(directionlabel,angle_deg,tx,ty))
-            trialdata['movement_{}'.format(directionlabel)]=tx,ty
-            move_until_done(tx,ty,conf['passive_duration']) # move out to that direction
-            robot.stay_at(tx,ty)
-            time.sleep(conf['stay_duration'])
-            move_until_done(cx,cy,conf['return_duration']) # return to the center
-            robot.stay_at(cx,cy)
-            time.sleep(conf['recog_pause_duration'])
-            hist['direction{}'    .format(directionlabel)]=angle_deg
-            hist['direction{}_rad'.format(directionlabel)]=angle
-            hist['type{}'         .format(directionlabel)]=schedule['type{}'.format(directionlabel)]
-            hist['direction{}.xy' .format(directionlabel)]=tx,ty
-
+        angle_deg = schedule['direction']
+        angle = conv_ang(angle_deg) # Compute conventional angle
+        tx,ty = position_from_angle(angle,conf['movement_radius'])
+        print("Moving to direction : {:.2f} deg -> ({:.2f},{:.2f})".format(angle_deg,tx,ty))
+        trialdata['movement']=tx,ty
+        move_until_done(tx,ty,conf['passive_duration']) # move out to that direction
+        robot.stay_at(tx,ty)
+        time.sleep(conf['stay_duration'])
+        move_until_done(cx,cy,conf['return_duration']) # return to the center
+        robot.stay_at(cx,cy)
+        #time.sleep(conf['recog_pause_duration'])
+        hist['direction'    ]=angle_deg
+        hist['direction_rad']=angle
+        hist['type'         ]=schedule['type']
+        hist['direction.xy' ]=tx,ty
+        
         recognition_review(trialdata,hist)
-        answer = askoptions("Was it the first or second movement?",['first','second'])
-        hist['answer']='A' if answer=='first' else 'B'
+        answer = askoptions("Was this the movement you produced?",['yes','no'])
+        hist['answer']=answer #'A' if answer=='first' else 'B'
         hist['end.t']=time.time()-t0
         history.append(hist)
         savejson(history,jsonf)
@@ -1497,7 +1496,7 @@ def init_tk():
     f = Frame(master,background='black')
     loadb   = Button(f, text="Load robot",                background="green",foreground="black", command=load_robot)
     runb    = Button(f, text="Run",                       background="blue", foreground="white", command=run)
-    recogb  = Button(f, text="Recognition",               background="purple",foreground="white", command=runrecog)
+    recogb  = Button(f, text="Recognition yes/no",        background="purple",foreground="white", command=runrecog)
     quitb   = Button(f, text="Quit",                      background="red",foreground="black", command=end_program)
     
     gui["subject.id"] = StringVar()
