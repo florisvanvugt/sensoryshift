@@ -204,6 +204,13 @@ conf['fade_cue_colour']=(255,0,0) # the colour of the cursor while holding still
 conf['move_controller'] = 6
 
 
+# What is the cursor behaviour when rotation=NA?
+#  if na.cursor.hide = True, the cursor will be hidden when rotation=NA
+#  if it is False, the cursor will be shown, but visually error clamped to zero
+conf['na.cursor.hide'] = True
+
+
+
 # Note that these phase numbers are not necessarily incremental...
 conf['phases']=['init',
                 'return',
@@ -975,8 +982,12 @@ def mainloop():
                     # OLD -- We show the cursor, but if the rotation is NA (i.e. no-feedback trial) then we only show it as long
                     # as it's in the target zone.
                     #if showcursor or ( (trialdata['type']=='active') and in_start_zone(trialdata)): # or (trialdata['type']=='active' and phase_is('fade')):
-                    # Always show the cursor
-                    draw_ball(conf['screen'],trialdata['cursor_position'],conf['cursor_radius'],colour)
+                    if conf['na.cursor.hide'] and np.isnan(trialdata['cursor.rotation']):
+                        showcursor = ( (trialdata['type']=='active') and in_start_zone(trialdata))
+
+                    if showcursor:
+                        # Always show the cursor
+                        draw_ball(conf['screen'],trialdata['cursor_position'],conf['cursor_radius'],colour)
 
 
                 
