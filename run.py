@@ -205,9 +205,9 @@ conf['move_controller'] = 6
 
 
 # What is the cursor behaviour when rotation=NA?
-#  if na.cursor.hide = True, the cursor will be hidden when rotation=NA
-#  if it is False, the cursor will be shown, but visually error clamped to zero
-conf['na.cursor.hide'] = True
+#  if na.cursor.show = False, the cursor will be hidden when rotation=NA and the cursor is outside the starting zone;
+#  if it is True, the cursor will be shown, but visually error clamped to zero
+conf['na.cursor.show'] = False
 
 
 
@@ -961,7 +961,6 @@ def mainloop():
             if phase_in(['forward','stay','fade','move']):
 
                 # Show a cursor
-                showcursor = True # not np.isnan(trialdata['cursor.rotation']) # the signal to hide the cursor is setting cursor.rotation to NA
                 if trialdata['type'] in ['passive','active']:
                     if phase_is('fade'):
                         colour=conf['fade_cue_colour']
@@ -982,8 +981,10 @@ def mainloop():
                     # OLD -- We show the cursor, but if the rotation is NA (i.e. no-feedback trial) then we only show it as long
                     # as it's in the target zone.
                     #if showcursor or ( (trialdata['type']=='active') and in_start_zone(trialdata)): # or (trialdata['type']=='active' and phase_is('fade')):
-                    if conf['na.cursor.hide'] and np.isnan(trialdata['cursor.rotation']):
-                        showcursor = ( (trialdata['type']=='active') and in_start_zone(trialdata))
+                    showcursor = True # not np.isnan(trialdata['cursor.rotation']) # the signal to hide the cursor is setting cursor.rotation to NA
+                    if (not conf['na.cursor.show']) and np.isnan(trialdata['cursor.rotation']):
+                        # Show the cursor only in the starting zone, hide it when it's outside
+                        showcursor = (trialdata['type']=='active') and in_start_zone(trialdata)
 
                     if showcursor:
                         # Always show the cursor
