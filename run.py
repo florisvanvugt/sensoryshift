@@ -637,7 +637,7 @@ def show_review(plot,trialdata):
     gif = '.screenshot.gif'
     pygame.image.save(plot,fname)
     subprocess.call(['convert',fname,
-                     '-crop','800x500+600+150',
+                     '-crop','800x500+550+100',
                      '-flip',
                      '-resize','480x300',
                      '+repage',
