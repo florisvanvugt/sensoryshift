@@ -209,6 +209,15 @@ conf['move_controller'] = 6
 #  if it is True, the cursor will be shown, but visually error clamped to zero
 conf['na.cursor.show'] = False
 
+# Show a "horizontal" bar moving along with the subject in the rotation=NA condition?
+conf['na.bar.show'] = True
+    
+conf['bar.color']=(255,255,0)
+conf['bar.width']=3 # px
+conf['bar.minx']=-.2
+conf['bar.maxx']= .2
+
+
 
 
 # Note that these phase numbers are not necessarily incremental...
@@ -283,9 +292,19 @@ def draw_arc_selector(surf):
         #draw_ball(conf['screen'],pos,conf['selector_radius'],conf['selector_colour'])
         
 
+
+
+def draw_bar(surface,ypos):
+    """
+    Let's draw a bar that moves along with the subject on the screen.
+    The "vertical" position of the bar is indicated by ypos.
+    """
+    fromc = robot_to_screen(conf['bar.minx'],ypos,conf)
+    toc   = robot_to_screen(conf['bar.maxx'],ypos,conf)
+
+    pygame.draw.line(surface,conf['bar.color'],fromc,toc,conf['bar.width'])
     
-
-
+    
 
     
 def draw_ball(surface,pos,radius,colour):
@@ -719,10 +738,12 @@ def visual_error_clamp( pos, start, target):
     dist = d(pos,start) 
 
     # TODO: if we are moving *away* from the target, we will want to make dist negative
-    dpostarg   = d(pos,target)
+    if pos[1]<start[1]:
+        dist=-dist
+    #dpostarg   = d(pos,target)
     dstarttarg = d(start,target)
-    if dpostarg>dstarttarg:
-        dist=-dist # count this as moving away
+    #if dpostarg>dstarttarg:
+    #    dist=-dist # count this as moving away
     
     # Unit vector pointing from target to start
     targvect = (target-start)/dstarttarg
@@ -969,11 +990,16 @@ def mainloop():
                     else:
                         colour = conf['passive_cursor_colour']
 
-                    if np.isnan(trialdata['cursor.rotation']):
-                        trialdata['cursor_position']=visual_error_clamp( (trialdata['robot_x'],trialdata['robot_y']),
-                                                                         conf['robot_center'],
-                                                                         trialdata['target_position'] )
-                                                                        
+                    clamp_trial = np.isnan(trialdata['cursor.rotation']) # Decide whether this is an error clamp trial
+                    if clamp_trial:
+                        if conf['na.bar.show']:
+                            trialdata['cursor_position']=(trialdata['robot_x'],trialdata['robot_y'])
+                            trialdata['bar_position']=visual_error_clamp( (trialdata['robot_x'],trialdata['robot_y']),
+                                                                          conf['robot_center'],
+                                                                          trialdata['target_position'] )
+                        else:
+                            assert False # not implemented, ask me this another day
+                            
                     else:
                         # Rotate the cursor by a specified amount
                         trialdata['cursor_position']=rotate((trialdata['robot_x'],trialdata['robot_y']),
@@ -982,14 +1008,21 @@ def mainloop():
                     # as it's in the target zone.
                     #if showcursor or ( (trialdata['type']=='active') and in_start_zone(trialdata)): # or (trialdata['type']=='active' and phase_is('fade')):
                     showcursor = True # not np.isnan(trialdata['cursor.rotation']) # the signal to hide the cursor is setting cursor.rotation to NA
-                    if (not conf['na.cursor.show']) and np.isnan(trialdata['cursor.rotation']):
+                    if (not conf['na.cursor.show']) and clamp_trial:
                         # Show the cursor only in the starting zone, hide it when it's outside
                         showcursor = (trialdata['type']=='active') and in_start_zone(trialdata)
 
+                    # Decide whether we want to show a "horizontal" bar moving along with the subject...
+                    if clamp_trial and conf['na.bar.show'] and not in_start_zone(trialdata):
+                        _,cursor_y = trialdata['bar_position']
+                        draw_bar(conf['screen'],cursor_y)
+                        
                     if showcursor:
                         # Always show the cursor
                         draw_ball(conf['screen'],trialdata['cursor_position'],conf['cursor_radius'],colour)
 
+
+                        
 
                 
             pygame.display.flip()
