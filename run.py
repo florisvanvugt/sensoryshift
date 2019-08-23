@@ -211,13 +211,20 @@ conf['na.cursor.show'] = False
 
 # Show a "horizontal" bar moving along with the subject in the rotation=NA condition?
 conf['na.bar.show'] = True
-    
+
 conf['bar.color']=(255,255,0)
 conf['bar.width']=3 # px
 conf['bar.minx']=-.2
 conf['bar.maxx']= .2
+conf['bar.as.arc']=True # whether to show the bar as an arc
 
 
+# The range of angles to show when we show an arc as a visual display
+conf['recognition_display_arc']= True # whether to show an arc (rather than a bar) during the recognition test
+conf['cursor_arc_range']=(-45,45)
+conf['cursor_arc_segments']=10
+conf['cursor_arc_thickness']=.01 # in robot coordinates (m)
+conf['cursor_arc_colour']=(255,255,0)
 
 
 # Note that these phase numbers are not necessarily incremental...
@@ -306,6 +313,38 @@ def draw_bar(surface,ypos):
     
     
 
+
+
+
+def draw_arc(surf,dist):
+    """
+    Let's draw a bar that moves along with the subject on the screen.
+    The "vertical" position of the bar is indicated by ypos.
+    """
+    mna,mxa = conf['cursor_arc_range']
+    minang,maxang = conv_ang(mna),conv_ang(mxa) # convert into usable angles
+    angs = np.linspace(minang,maxang,conf['cursor_arc_segments'])
+
+    # Now make an inner and outer arc
+    cx,cy = conf['robot_center']
+    points = []
+    for sgn in [-.5,.5]:
+        rad = dist-sgn*conf['arc_thickness']
+        p = [ (cx+rad*np.cos(a),cy+rad*np.sin(a)) for a in angs ]
+        if sgn<0: p.reverse()
+        points += p
+
+    # And then plot a polygon!
+    poly = [ robot_to_screen(ry,rz,conf) for (ry,rz) in points ]
+    pygame.draw.polygon( surf,conf['cursor_arc_colour'],poly)
+
+    
+    
+
+
+
+
+    
     
 def draw_ball(surface,pos,radius,colour):
     """
@@ -749,8 +788,7 @@ def visual_error_clamp( pos, start, target):
     targvect = (target-start)/dstarttarg
 
     # Now take that amount and apply it to the vector start-to-target
-    return start + dist*targvect
-
+    return start + dist*targvect , dist
     
 
 
@@ -994,9 +1032,9 @@ def mainloop():
                     if clamp_trial:
                         if conf['na.bar.show']:
                             trialdata['cursor_position']=(trialdata['robot_x'],trialdata['robot_y'])
-                            trialdata['bar_position']=visual_error_clamp( (trialdata['robot_x'],trialdata['robot_y']),
-                                                                          conf['robot_center'],
-                                                                          trialdata['target_position'] )
+                            trialdata['bar_position'],trialdata['bar_distance']=visual_error_clamp( (trialdata['robot_x'],trialdata['robot_y']),
+                                                                                                    conf['robot_center'],
+                                                                                                    trialdata['target_position'] )
                         else:
                             assert False # not implemented, ask me this another day
                             
@@ -1014,8 +1052,12 @@ def mainloop():
 
                     # Decide whether we want to show a "horizontal" bar moving along with the subject...
                     if clamp_trial and conf['na.bar.show'] and not in_start_zone(trialdata):
-                        _,cursor_y = trialdata['bar_position']
-                        draw_bar(conf['screen'],cursor_y)
+
+                        if conf['bar.as.arc']:
+                            draw_arc(conf['screen'],trialdata['bar_distance'])
+                        else:
+                            _,cursor_y = trialdata['bar_position']
+                            draw_bar(conf['screen'],cursor_y)
                         
                     if showcursor:
                         # Always show the cursor
@@ -1278,7 +1320,7 @@ def runrecog():
     print("Reading schedule file {}.".format(schedulef))
     # Read the recognition script
     s = pd.read_csv(schedulef,sep=',')
-    for c in ['trial','direction','type']:
+    for c in ['trial','direction','type','target_direction']:
         if not c in s.columns:
             print("## ERROR: missing column %s in schedule file - is this really a yes/no recognition task schedule file?"%c)
             return False
@@ -1348,7 +1390,47 @@ def askoptions(message,options):
         time.sleep(.1)
     win.destroy()
     return selected
+
+
+
+
+
+
+def recognition_display(trialdata,markersonly=False):
+    # Draw the subject display screen for use during the recognition task
+    conf['screen'].fill(conf['bgcolor'])
+
+    trialdata['robot_x']=robot.rshm('x')
+    trialdata['robot_y']=robot.rshm('y')
+    
+    # Draw start position
+    draw_ball(conf['screen'],conf['robot_center'],conf['center_marker_radius'],conf['center_marker_colour'])
+
+    # TODO: What is the target colour?
+    draw_ball(conf['screen'],trialdata['target_position'],conf['target_radius'],conf['target_colour'])
+
+    if not markersonly: # if we also show a marker indicating the subject position somehow (could be a bar or arc or cursor)
+        trialdata['bar_position'],dist=visual_error_clamp( (trialdata['robot_x'],trialdata['robot_y']),
+                                                           conf['robot_center'],
+                                                           trialdata['target_position'] )
+        if conf['recognition_display_arc']:
+            draw_arc(conf['screen'],dist)
+        else:
+            _,cursor_y = trialdata['bar_position']
+            draw_bar(conf['screen'],cursor_y)
         
+    pygame.display.flip()
+
+
+
+def move_and_display(targetx,targety,movet,displayfunction):
+    # Show a display while moving to a given location in a given time
+    robot.move_to(targetx,targety,movet)
+    while not robot.move_is_done():
+        displayfunction()
+        time.sleep(.001)
+
+
     
 def recognitiontest():
     """ The main procedure for the recognition test."""
@@ -1369,6 +1451,8 @@ def recognitiontest():
     move_until_done(cx,cy,conf['return_duration'])
     robot.stay_at(cx,cy)
     time.sleep(conf['recog_pause_duration'])
+
+    showvis = bool(gui['recognitionvisuals'])
     
     current_schedule = 0
     history = []
@@ -1377,24 +1461,28 @@ def recognitiontest():
         gui['progress']['value']   =i
         gui['progress'].update()
         trialdata['trial']=schedule['trial']
+        trialdata['target_position'] = position_from_angle(conv_ang(schedule['target_direction']),conf['movement_radius']) # this is where we will display the target
+        
         hist = {'trial':schedule['trial'],'start.t':time.time()-t0}
         print("\n\n### Trial {} ###".format(trialdata['trial']))
 
-        angle_deg = schedule['direction']
+        angle_deg = schedule['direction'] # this is where we will move the hand to
         angle = conv_ang(angle_deg) # Compute conventional angle
         tx,ty = position_from_angle(angle,conf['movement_radius'])
         print("Moving to direction : {:.2f} deg -> ({:.2f},{:.2f})".format(angle_deg,tx,ty))
         trialdata['movement']=tx,ty
-        move_until_done(tx,ty,conf['passive_duration']) # move out to that direction
+        move_and_display(tx,ty,conf['passive_duration'], lambda : recognition_display(trialdata)) # move out to that direction
         robot.stay_at(tx,ty)
         time.sleep(conf['stay_duration'])
         move_until_done(cx,cy,conf['return_duration']) # return to the center
         robot.stay_at(cx,cy)
         #time.sleep(conf['recog_pause_duration'])
-        hist['direction'    ]=angle_deg
-        hist['direction_rad']=angle
-        hist['type'         ]=schedule['type']
-        hist['direction.xy' ]=tx,ty
+        hist['direction'    ]     =angle_deg
+        hist['direction_rad']     =angle
+        hist['display_direction'] =schedule['target_direction']
+        hist['display_position']  =trialdata['target_position']
+        hist['type'         ]     =schedule['type']
+        hist['direction.xy' ]     =tx,ty
         
         recognition_review(trialdata,hist)
         answer = askoptions("Was this the movement you produced?",['yes','no'])
@@ -1589,6 +1677,11 @@ def init_tk():
     #b.grid(row=row,column=1,sticky=W,padx=10)
     
     row += 1
+    gui['recognitionvisuals']=IntVar()
+    gui['recognitionvisuals'].set(1)
+    c = Checkbutton(f, text="Show visuals during recogn.", variable=gui['recognitionvisuals'])
+    c.grid(row=row,column=1)
+    #Label(f,text="")
     quitb.grid     (row=row,sticky=W,padx=10,pady=10)
 
     row +=1
