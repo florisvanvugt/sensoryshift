@@ -221,8 +221,8 @@ conf['bar.as.arc']=True # whether to show the bar as an arc
 
 # The range of angles to show when we show an arc as a visual display
 conf['recognition_display_arc']= True # whether to show an arc (rather than a bar) during the recognition test
-conf['cursor_arc_range']=(-45,45)
-conf['cursor_arc_segments']=10
+conf['cursor_arc_range']=(-60,60)
+conf['cursor_arc_segments']=18
 conf['cursor_arc_thickness']=.01 # in robot coordinates (m)
 conf['cursor_arc_colour']=(255,255,0)
 
@@ -1474,6 +1474,7 @@ def recognitiontest():
         move_and_display(tx,ty,conf['passive_duration'], lambda : recognition_display(trialdata)) # move out to that direction
         robot.stay_at(tx,ty)
         time.sleep(conf['stay_duration'])
+        recognition_display(trialdata,True)
         move_until_done(cx,cy,conf['return_duration']) # return to the center
         robot.stay_at(cx,cy)
         #time.sleep(conf['recog_pause_duration'])
