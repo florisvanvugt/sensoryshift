@@ -13,7 +13,8 @@ import datetime
 import h5py
 
 import scipy
-    
+
+import threading
 from threading import Thread
 
 from aux import *
@@ -316,7 +317,7 @@ def draw_bar(surface,ypos):
 
 
 
-def draw_arc(surf,dist):
+def draw_arc(surf,dist,color):
     """
     Let's draw a bar that moves along with the subject on the screen.
     The "vertical" position of the bar is indicated by ypos.
@@ -336,7 +337,7 @@ def draw_arc(surf,dist):
 
     # And then plot a polygon!
     poly = [ robot_to_screen(ry,rz,conf) for (ry,rz) in points ]
-    pygame.draw.polygon( surf,conf['cursor_arc_colour'],poly)
+    pygame.draw.polygon( surf,color,poly)
 
     
     
@@ -999,6 +1000,8 @@ def mainloop():
         if trialdata['redraw']:
 
             conf['screen'].fill(conf['bgcolor'])
+            
+            clamp_trial = np.isnan(trialdata['cursor.rotation']) # Decide whether this is an error clamp trial
 
             # Draw start position
             draw_ball(conf['screen'],conf['robot_center'],conf['center_marker_radius'],conf['center_marker_colour'])
@@ -1006,9 +1009,15 @@ def mainloop():
             if 'target_position' in trialdata and not trialdata['type']=='pinpoint': # We show a target always, only not if this is a pinpoint trial
 
                 # Determine the colour
-                col = get_target_colour() if phase_is('hold') else conf['target_colour'] 
-                draw_ball(conf['screen'],trialdata['target_position'],conf['target_radius'],col)
-            
+                col = get_target_colour() if phase_is('hold') else conf['target_colour']
+
+                # Now draw the target.
+                # If we want to draw the target as an arc...
+                if clamp_trial and conf['na.bar.show'] and conf['bar.as.arc']:
+                    draw_arc(conf['screen'],conf['movement_radius'],col)
+                else: #  or draw the target as a ball
+                    draw_ball(conf['screen'],trialdata['target_position'],conf['target_radius'],col)
+                    
             if phase_is('select'): # If we are in the select phase
                 if 'selector_prop' in trialdata: selector_to_angle()
                 draw_arc_selector(conf['screen'])
@@ -1028,7 +1037,6 @@ def mainloop():
                     else:
                         colour = conf['passive_cursor_colour']
 
-                    clamp_trial = np.isnan(trialdata['cursor.rotation']) # Decide whether this is an error clamp trial
                     if clamp_trial:
                         if conf['na.bar.show']:
                             trialdata['cursor_position']=(trialdata['robot_x'],trialdata['robot_y'])
@@ -1054,7 +1062,7 @@ def mainloop():
                     if clamp_trial and conf['na.bar.show'] and not in_start_zone(trialdata):
 
                         if conf['bar.as.arc']:
-                            draw_arc(conf['screen'],trialdata['bar_distance'])
+                            draw_arc(conf['screen'],trialdata['bar_distance'],conf['cursor_arc_colour'])
                         else:
                             _,cursor_y = trialdata['bar_position']
                             draw_bar(conf['screen'],cursor_y)
@@ -1275,6 +1283,7 @@ def load_robot():
 
 
 def stop_running():
+    print("Currently {} threads still active.".format(threading.active_count()))
     gui['keep_going'] = False # this will bail out of the main loop
     time.sleep(1) # wait until some last commands may have stopped
     close_logs()
@@ -1293,6 +1302,7 @@ def end_program():
     stop_running()
     ending()
     master.destroy()
+    print("Just before killing, {} thread(s) still active.".format(threading.active_count()))
     sys.exit(0)
 
 
@@ -1407,14 +1417,17 @@ def recognition_display(trialdata,markersonly=False):
     draw_ball(conf['screen'],conf['robot_center'],conf['center_marker_radius'],conf['center_marker_colour'])
 
     # TODO: What is the target colour?
-    draw_ball(conf['screen'],trialdata['target_position'],conf['target_radius'],conf['target_colour'])
+    if conf['recognition_display_arc']:
+        draw_arc(conf['screen'],conf['movement_radius'],conf['target_colour'])
+    else:
+        draw_ball(conf['screen'],trialdata['target_position'],conf['target_radius'],conf['target_colour'])
 
     if not markersonly: # if we also show a marker indicating the subject position somehow (could be a bar or arc or cursor)
         trialdata['bar_position'],dist=visual_error_clamp( (trialdata['robot_x'],trialdata['robot_y']),
                                                            conf['robot_center'],
                                                            trialdata['target_position'] )
         if conf['recognition_display_arc']:
-            draw_arc(conf['screen'],dist)
+            draw_arc(conf['screen'],dist,conf['cursor_arc_colour'])
         else:
             _,cursor_y = trialdata['bar_position']
             draw_bar(conf['screen'],cursor_y)
@@ -1680,7 +1693,7 @@ def init_tk():
     row += 1
     gui['recognitionvisuals']=IntVar()
     gui['recognitionvisuals'].set(1)
-    c = Checkbutton(f, text="Show visuals during recogn.", variable=gui['recognitionvisuals'])
+    c = Checkbutton(f, text="Show visuals during recogn.", variable=gui['recognitionvisuals'], background='black',foreground='green',highlightcolor='black',highlightthickness=0)
     c.grid(row=row,column=1)
     #Label(f,text="")
     quitb.grid     (row=row,sticky=W,padx=10,pady=10)
