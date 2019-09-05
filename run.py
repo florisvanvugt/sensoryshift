@@ -1013,10 +1013,10 @@ def mainloop():
 
                 # Now draw the target.
                 # If we want to draw the target as an arc...
-                if clamp_trial and conf['na.bar.show'] and conf['bar.as.arc']:
-                    draw_arc(conf['screen'],conf['movement_radius'],col)
-                else: #  or draw the target as a ball
-                    draw_ball(conf['screen'],trialdata['target_position'],conf['target_radius'],col)
+                #if clamp_trial and conf['na.bar.show'] and conf['bar.as.arc']:
+                #    draw_arc(conf['screen'],conf['movement_radius'],col)
+                #else: #  or draw the target as a ball
+                draw_ball(conf['screen'],trialdata['target_position'],conf['target_radius'],col)
                     
             if phase_is('select'): # If we are in the select phase
                 if 'selector_prop' in trialdata: selector_to_angle()
