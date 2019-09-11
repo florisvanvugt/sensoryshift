@@ -1,4 +1,4 @@
-,direction,target_direction,type,trial
+,direction,target.direction,type,trial
 0,45,0,20,1
 1,15,0,-10,2
 2,25,0,training,3

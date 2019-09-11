@@ -57,6 +57,8 @@ Every block starts in `init`.
 
 
 
+In the motor copy test: `init -> return -> pause -> forward -> backward -> fade -> move -> hold -> completed`
+
 
 
 
@@ -102,7 +104,7 @@ This CSV should have the following columns:
 * `trial` - the number of the trial
 * `direction` - which direction (in degrees) we will move to
 * `type` - just a label that we don't actually use, but hey, why not have extra columns that do nothing?
-* `target_direction` - the direction in which to display the visual target (because it can be different from the actual physical movement direction)
+* `target.direction` - the direction in which to display the visual target (because it can be different from the actual physical movement direction) -- NOT USED ANYMORE BECAUSE WE DISPLAY AN ARC
 
 
 The directions are given in degrees as in the rest of the case relative to straight ahead, counter-clockwise.

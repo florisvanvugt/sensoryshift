@@ -223,9 +223,12 @@ conf['bar.as.arc']=True # whether to show the bar as an arc
 # The range of angles to show when we show an arc as a visual display
 conf['recognition_display_arc']= True # whether to show an arc (rather than a bar) during the recognition test
 conf['cursor_arc_range']=(-60,60)
-conf['cursor_arc_segments']=18
+conf['cursor_arc_segments']=15
 conf['cursor_arc_thickness']=.01 # in robot coordinates (m)
-conf['cursor_arc_colour']=(255,255,0)
+conf['cursor_arc_colour']=(255,255,0) ## DEPRECATED -- close-to-zero chance of actually having any effect on anything
+
+
+conf['motorcopy_forward_colour']=(180,180,180)
 
 
 # Note that these phase numbers are not necessarily incremental...
@@ -520,6 +523,7 @@ def start_new_trial():
 
 
     sched = current_schedule() # Retrieve the current schedule
+    print(sched)
     trialdata['timestamp']       =time.time()
     trialdata['schedule.number'] =trialdata['current_schedule']
     trialdata['trial']           =sched['trial'] # trial number
@@ -1031,6 +1035,8 @@ def mainloop():
 
                 # Show a cursor
                 if trialdata['type'] in ['passive','active']:
+
+                    # Determine the colour for the cursor (point cursor or arc cursor)
                     if phase_is('fade'):
                         colour=conf['fade_cue_colour']
                     elif phase_is('move'):
@@ -1063,7 +1069,7 @@ def mainloop():
                     if clamp_trial and conf['na.bar.show'] and not in_start_zone(trialdata):
 
                         if conf['bar.as.arc']:
-                            draw_arc(conf['screen'],trialdata['bar_distance'],conf['cursor_arc_colour'])
+                            draw_arc(conf['screen'],trialdata['bar_distance'],colour)
                         else:
                             _,cursor_y = trialdata['bar_position']
                             draw_bar(conf['screen'],cursor_y)
@@ -1250,6 +1256,7 @@ def update_ui():
     global gui
     gui["runb"].configure(state=DISABLED)
     gui["recogb"].configure(state=DISABLED)
+    gui["mcb"].configure(state=DISABLED)
     gui["capturecenter"].configure(state=DISABLED)
     gui["holdcenter"].configure(state=DISABLED)
 
@@ -1259,6 +1266,7 @@ def update_ui():
         if not gui["running"]:
             gui["runb"].configure(state=NORMAL)
             gui["recogb"].configure(state=NORMAL)
+            gui["mcb"].configure(state=NORMAL)
             gui["capturecenter"].configure(state=NORMAL)
             gui["holdcenter"].configure(state=NORMAL)
 
@@ -1338,7 +1346,7 @@ def runrecog():
     print("Reading schedule file {}.".format(schedulef))
     # Read the recognition script
     s = pd.read_csv(schedulef,sep=',')
-    for c in ['trial','direction','type','target_direction']:
+    for c in ['trial','direction','type','target.direction']:
         if not c in s.columns:
             print("## ERROR: missing column %s in schedule file - is this really a yes/no recognition task schedule file?"%c)
             return False
@@ -1368,6 +1376,335 @@ def runrecog():
     conf['thread'].start()
         
 
+
+
+
+
+
+def runmotorcopy():
+    """ Run the motor copy version of the recognition task """
+    if gui["running"]:
+        return
+    
+    global conf
+
+    participant=gui["subject.id"].get().strip()
+    if participant=="":
+        tkMessageBox.showinfo("Error", "You need to enter a participant ID.")
+        return
+    conf['participant'] = participant
+
+    # Ask to open a schedule file
+    fn = filedialog.askopenfilename(filetypes = (("CSV files", "*.csv")
+                                                 ,("All files", "*.*") ))
+    if not fn or not len(fn):
+        print("No file selected.")
+        return
+    schedulef = fn
+
+    print("Reading schedule file {}.".format(schedulef))
+    # Read the recognition script
+    s = pd.read_csv(schedulef,sep=',')
+    for c in ['trial','direction','type','target.direction']:
+        if not c in s.columns:
+            print("## ERROR: missing column %s in schedule file - is this really a yes/no recognition task schedule file?"%c)
+            return False
+
+    schedule = []
+    for i,row in s.iterrows():
+        row = dict(row)
+        schedule.append(row)
+    trialdata['schedule']=schedule
+
+    # Read the robot center
+    if not get_center(): return
+    robot.wshm('fvv_robot_center_x',conf['robot_center_x'])
+    robot.wshm('fvv_robot_center_y',conf['robot_center_y'])
+
+    # Initialise log information
+    basedir = './data/%s'%conf['participant']
+    if not os.path.exists(basedir):
+        os.makedirs(basedir)
+    timestamp = datetime.datetime.now().strftime("%d_%m.%Hh%Mm%S")
+    basename = '%s/%s_%s_%s'%(basedir,conf['participant'],EXPERIMENT,timestamp)
+    jsonf = basename+"motorcopy.json" # where we will save the data
+    trialdata['basename']=basename
+    trialdata['jsonf']=jsonf
+
+    trialdata['current_schedule']=-1 # start at the beginning
+    trialdata['phase']='init'
+
+    gui['progress']['maximum'] =len(trialdata['schedule'])
+    gui['progress']['value']   =0
+    
+    # Let's go!
+    print("Launching motor copy test: {} trials.".format(len(schedule)))
+
+    conf['screen'].fill(conf['bgcolor'])
+    pygame.display.flip()
+    
+    gui["running"]=True
+    update_ui()
+
+    conf['thread']=Thread(target=mainloopmotorcopy)
+    conf['thread'].start()
+        
+
+
+
+
+def start_motor_copy_trial():
+
+    trialdata['current_schedule']+=1
+
+    gui['progress']['maximum'] =len(trialdata['schedule'])
+    gui['progress']['value']   =trialdata['current_schedule']
+
+    if trialdata['current_schedule']==len(trialdata['schedule']):
+        # Done the experiment!
+        print("## MOTOR COPY COMPLETED ##")
+        robot.move_to(conf['robot_center_x'],conf['robot_center_y'],conf['return_duration'])
+        while not robot.move_is_done():
+            time.sleep(.1)
+        robot.stay() # just fix the handle wherever it is
+        next_phase('completed')
+        gui['keep_going'] = False # this will bail out of the main loop
+        gui['running'] = False
+        time.sleep(1) # wait until some last commands may have stopped
+        close_logs()
+        update_ui()
+        # Now ask the experimenter for observations
+        #obsv = tksd.askstring('Please record any observations', 'Experimenter, please write down any observations.\nAny irregularities?\nDid the subject seem concentrated or not?\nWere things unclear or clear?\nAnything else that is worth noting?')
+        #with open(conf['obsvlog'],'w') as f:
+        #    f.write(obsv)
+
+        gui['trialinfo'].set('Completed block')
+        tkMessageBox.showinfo("Robot", "Motor copy completed! Yay!")
+        return
+
+    sched = current_schedule() # Retrieve the current schedule
+    trialdata['timestamp']       =time.time()
+    trialdata['schedule.number'] =trialdata['current_schedule']
+    trialdata['trial']           =sched['trial'] # trial number
+    trialdata['type']            =sched['type']
+    trialdata['direction']       =sched['direction']         # where subjects will be moved passivly
+    trialdata['target.direction']=sched['target.direction']  # display angle of the target
+    trialdata['target_position'] =position_from_angle(conv_ang(sched['target.direction']))  # display angle of the target
+    trialdata['movement_position']=None
+    trialdata['force.field']     ='none'
+    trialdata['captured']        =[] # nothing captured
+    trialdata['review.shown']    =False
+    #trialdata['position_history']=[] # start with a clean position history (we'll fill this up during active trials only)
+
+    for v in ['vmax_x','vmax_y','final_x','final_y']:
+        trialdata[v]=None
+
+    trialinfo =  "trial %d %s   "%(trialdata['trial'],trialdata['type'])
+    trialinfo += ("targ: %.2f \n"%(trialdata['target.direction']))
+    print('\n\n\n### MOTOR COPY %d %s ####'%(trialdata['trial'],trialdata['type']))
+    print(trialinfo)
+    gui['trialinfo'].set(trialinfo)
+    robot.wshm('fvv_trial_no',     trialdata['trial'])
+
+    ## Return the robot to the center
+    sx,sy = conf['robot_center']
+    robot.move_to(sx,sy,conf['return_duration'])
+    next_phase('return') # return to the starting point to start the trial
+
+
+
+
+def mainloopmotorcopy():
+    
+    gui['running']=True
+    gui['keep_going']=True # be an optimist!
+    
+    trialdata['redraw']=True
+    trialdata['first.t']=time.time()
+    pygame.event.clear() # Make sure there is no previous events in the pipeline
+
+    while gui['keep_going']:
+
+        time.sleep(.0001) # add a little breath
+        trialdata["t.absolute"] = time.time()
+        trialdata["t.current"] = trialdata["t.absolute"]-trialdata['first.t']
+        schedule = current_schedule()
+
+
+        ##
+        ## INPUT PHASE
+        ##
+        
+        # Read the current position
+        trialdata['robot_x'],trialdata['robot_y'] = robot.rshm('x'),robot.rshm('y')
+        if phase_in(['fade','move']):
+            record_position(trialdata['robot_x'],trialdata['robot_y'])
+
+
+        ##
+        ## CONTROL FLOW
+        ##
+        if phase_is('init'):
+            # Start a new trial
+            start_motor_copy_trial()
+
+        if phase_is('return'):
+            if robot.move_is_done(): # if we are back at the starting point
+                robot.stay()
+                next_phase('pause')
+                trialdata['pause.until.t']=trialdata['t.absolute']+conf['pause_duration']
+
+        if phase_is('pause'):
+            if trialdata['t.absolute']>trialdata.get('pause.until.t',0): # if the hold time is expired
+
+                # Now start a forward movement to the given target direction
+                angle = conv_ang(schedule['direction'])
+                trialdata['movement_angle']=angle
+                radius = conf['movement_radius']
+                trialdata['movement_position']=position_from_angle(angle,radius)
+                tx,ty = trialdata['movement_position']
+                robot.move_to(tx,ty,conf['passive_duration'])
+                next_phase('forward')
+
+        if phase_is('forward'):
+            if robot.move_is_done():
+                robot.stay()
+                trialdata['stay.until.t']=trialdata['t.absolute']+conf['stay_duration']
+                next_phase('stay')
+
+        if phase_is('stay'):
+            if trialdata['t.absolute']>trialdata.get('stay.until.t',0):
+                sx,sy = conf['robot_center']
+                robot.move_to(sx,sy,conf['passive_duration'])
+                next_phase('backward')
+                    
+        if phase_is('backward'):
+            if robot.move_is_done():
+
+                # Now prepare for the subject's active movement, and fade the forces
+                # Determine the angle of the display target
+                angle = conv_ang(schedule['target.direction'])
+                trialdata['target.display.angle']=angle
+                trialdata['target_position']=position_from_angle(angle)
+                
+                hold_fade()
+                robot.background_capture()
+                # the above line  will activate position capturing in the background,
+                # so that we can later pull the captured trajectory out
+                next_phase('fade')
+                trialdata['hold.until.t']=trialdata['t.absolute']+conf['fade_duration']
+                
+                if DEBUG: # in the debug mode, we will simulate a subject's movement (because we are not connected to the physical robot)
+                    x,y=trialdata['target_position']
+                    robot.preprogram_move_to(x,y,1.5)
+                    robot.future.append({"fvv_max_vel":.46}) # send a max_vel value for testing
+                    robot.future.append({"fvv_move_done":1}) # this will happen in the future when the entire trajectory has finished
+                    
+                trialdata['redraw']=True
+                
+        if phase_is('fade'):
+            if trialdata['t.absolute']>trialdata.get('hold.until.t',0): # if the hold time is expired
+                start_move_controller(trialdata) ### TODO: change this somehow, this should probably not refer to this normal loop function
+                next_phase('move')
+                robot.wshm('fvv_trial_phase',5) # signal that we are moving 
+                trialdata['redraw']=True
+                trialdata['t.move.start']=trialdata['t.absolute']
+
+        if phase_is('move'):
+            if robot.rshm('fvv_move_done'): # in active functioning mode
+                #if trialdata['t.absolute']>trialdata['t.move.start']+2 : # DEBUG ONLY robot.rshm('fvv_move_done'): # this is the signal from the move controller that the subject has stopped moving
+                robot.stay()
+                capt = robot.stop_background_capture() # stop capturing and return what we have captured
+                trialdata['captured'] = [ (x,y,fx,fy,fz) for (x,y,fx,fy,fz) in capt ] # make a copy, which seems to be a good idea here, otherwise I had issues when saving to pickle for example
+                
+                # Read the position at peak velocity
+                for vr in ['vmax_x','vmax_y','final_x','final_y','max_vel']:
+                    trialdata[vr]=robot.rshm('fvv_%s'%vr)
+                
+                next_phase('hold')
+                trialdata['hold.until.t']=trialdata['t.absolute']+conf['stay_duration']
+
+        if phase_is('hold'):
+            if trialdata['t.absolute']>trialdata.get('hold.until.t',0):
+                next_phase('completed')
+                
+
+        if phase_is('completed'):
+            ## review_plot() TODO maybe make motor copy review plot
+            ## write_logs() TODO this has to be done but for motor copy
+            start_motor_copy_trial()
+            
+        
+
+        #
+        #       DISPLAY 
+        # Possibly update the display
+        #
+        if trialdata['redraw']:
+
+            conf['screen'].fill(conf['bgcolor'])
+            
+            # Draw start position
+            draw_ball(conf['screen'],conf['robot_center'],conf['center_marker_radius'],conf['center_marker_colour'])
+
+            # Draw the target
+            if 'target_position' in trialdata: # We show a target always, only not if this is a pinpoint trial
+
+                # Determine the colour
+                col = get_target_colour() if phase_is('hold') else conf['target_colour']
+
+                # Now draw the target.
+                # If we want to draw the target as an arc...
+                draw_arc(conf['screen'],conf['movement_radius'],col)
+                    
+            # For debug only: show veridical robot position
+            if DEBUG:
+                draw_ball(conf['screen'],(trialdata['robot_x'],trialdata['robot_y']),conf['cursor_radius'],(100,100,100)) # only for debug: show the real robot position
+
+            if phase_in(['forward','stay','fade','move']):
+
+                # Show a cursor
+                
+                # Determine the colour for the cursor (point cursor or arc cursor)
+                if phase_is('forward') or phase_is('stay'):
+                    colour=conf['motorcopy_forward_colour']
+                elif phase_is('fade'):
+                    colour=conf['fade_cue_colour']
+                elif phase_is('move'):
+                    colour = conf['active_cursor_colour']
+
+                # Determine the cursor position
+                trialdata['cursor_position']=(trialdata['robot_x'],trialdata['robot_y'])
+                _,trialdata['bar_distance']=visual_error_clamp( (trialdata['robot_x'],trialdata['robot_y']),
+                                                                conf['robot_center'],
+                                                                trialdata['target_position'] )
+
+                # Now actually draw the cursor
+                cursor_is_arc = not in_start_zone(trialdata)
+                in_start_zone(trialdata)
+                
+                if cursor_is_arc:
+                    draw_arc(conf['screen'],trialdata['bar_distance'],colour)
+                else:
+                    # Always show the cursor
+                    draw_ball(conf['screen'],trialdata['cursor_position'],conf['cursor_radius'],colour)
+                
+            pygame.display.flip()
+
+            
+    print("Bailed out of main motor copy loop.")
+    gui['running']=False
+    
+
+
+
+
+
+
+
+    
+
+    
 
 
 def get_center():
@@ -1424,19 +1761,20 @@ def recognition_display(trialdata,markersonly=False):
     # Draw start position
     draw_ball(conf['screen'],conf['robot_center'],conf['center_marker_radius'],conf['center_marker_colour'])
 
-    # TODO: What is the target colour?
+    # Draw the target (either arc or point)
     if conf['recognition_display_arc']:
         draw_arc(conf['screen'],conf['movement_radius'],conf['target_colour'])
     else:
         draw_ball(conf['screen'],trialdata['target_position'],conf['target_radius'],conf['target_colour'])
 
+    # Draw a cursor
     if not markersonly: # if we also show a marker indicating the subject position somehow (could be a bar or arc or cursor)
         trialdata['bar_position'],dist=visual_error_clamp( (trialdata['robot_x'],trialdata['robot_y']),
                                                            conf['robot_center'],
                                                            trialdata['target_position'] )
         if conf['recognition_display_arc']:
-            draw_arc(conf['screen'],dist,conf['cursor_arc_colour'])
-        else:
+            draw_arc(conf['screen'],dist,conf['active_cursor_colour'])
+        else: # this stuff below is so obscene we don't do it anymore
             _,cursor_y = trialdata['bar_position']
             draw_bar(conf['screen'],cursor_y)
         
@@ -1482,7 +1820,7 @@ def recognitiontest():
         gui['progress']['value']   =i
         gui['progress'].update()
         trialdata['trial']=schedule['trial']
-        trialdata['target_position'] = position_from_angle(conv_ang(schedule['target_direction']),conf['movement_radius']) # this is where we will display the target
+        trialdata['target_position'] = position_from_angle(conv_ang(schedule['target.direction']),conf['movement_radius']) # this is where we will display the target
         
         hist = {'trial':schedule['trial'],'start.t':time.time()-t0}
         print("\n\n### Trial {} ###".format(trialdata['trial']))
@@ -1501,7 +1839,7 @@ def recognitiontest():
         #time.sleep(conf['recog_pause_duration'])
         hist['direction'    ]     =angle_deg
         hist['direction_rad']     =angle
-        hist['display_direction'] =schedule['target_direction']
+        hist['display_direction'] =schedule['target.direction']
         hist['display_position']  =trialdata['target_position']
         hist['type'         ]     =schedule['type']
         hist['direction.xy' ]     =tx,ty
@@ -1652,6 +1990,7 @@ def init_tk():
     loadb   = Button(f, text="Load robot",                background="green",foreground="black", command=load_robot)
     runb    = Button(f, text="Run",                       background="blue", foreground="white", command=run)
     recogb  = Button(f, text="Recognition yes/no",        background="purple",foreground="white", command=runrecog)
+    mcb     = Button(f, text="Motor copy",                background="orange",foreground="black", command=runmotorcopy)
     quitb   = Button(f, text="Quit",                      background="red",foreground="black", command=end_program)
     
     gui["subject.id"] = StringVar()
@@ -1694,6 +2033,7 @@ def init_tk():
     row += 1
     runb.grid      (row=row,column=0,sticky=W,padx=10)
     recogb.grid    (row=row,column=1,padx=10)
+    mcb.grid       (row=row,column=2,padx=10)
     
     b   = Button(f, text="pinpoint",             background="purple",foreground="black", command=pinpoint)
     #b.grid(row=row,column=1,sticky=W,padx=10)
@@ -1701,8 +2041,8 @@ def init_tk():
     row += 1
     gui['recognitionvisuals']=IntVar()
     gui['recognitionvisuals'].set(1)
-    c = Checkbutton(f, text="Show visuals during recogn.", variable=gui['recognitionvisuals'], background='black',foreground='green',highlightcolor='black',highlightthickness=0)
-    c.grid(row=row,column=1)
+    #c = Checkbutton(f, text="Show visuals during recogn.", variable=gui['recognitionvisuals'], background='black',foreground='green',highlightcolor='black',highlightthickness=0)
+    #c.grid(row=row,column=1)
     #Label(f,text="")
     quitb.grid     (row=row,sticky=W,padx=10,pady=10)
 
@@ -1730,6 +2070,7 @@ def init_tk():
     gui["loadb"]     =loadb
     gui["runb"]      =runb
     gui['recogb']    =recogb
+    gui['mcb']       =mcb
     gui["quitb"]     =quitb
     gui["keep_going"]=False
     gui["loaded"]    =False
