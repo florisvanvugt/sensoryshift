@@ -1013,10 +1013,11 @@ def mainloop():
 
                 # Now draw the target.
                 # If we want to draw the target as an arc...
-                #if clamp_trial and conf['na.bar.show'] and conf['bar.as.arc']:
-                #    draw_arc(conf['screen'],conf['movement_radius'],col)
-                #else: #  or draw the target as a ball
-                draw_ball(conf['screen'],trialdata['target_position'],conf['target_radius'],col)
+                if schedule and schedule.get('target.type',None)=='arc':
+                    #if clamp_trial and conf['na.bar.show'] and conf['bar.as.arc']:
+                    draw_arc(conf['screen'],conf['movement_radius'],col)
+                else: #  or draw the target as a ball
+                    draw_ball(conf['screen'],trialdata['target_position'],conf['target_radius'],col)
                     
             if phase_is('select'): # If we are in the select phase
                 if 'selector_prop' in trialdata: selector_to_angle()
@@ -1209,7 +1210,7 @@ def read_schedule_file():
     print("Reading trial schedule file %s"%conf['schedulefile'])
 
     s = pd.read_csv(conf['schedulefile'],sep=',')
-    for c in ['trial','type','target.direction','mov.direction','cursor.rotation','force.field']:
+    for c in ['trial','type','target.direction','mov.direction','cursor.rotation','force.field','target.type']:
         if not c in s.columns:
             print("## ERROR: missing column %s in schedule."%c)
             return False
@@ -1217,7 +1218,14 @@ def read_schedule_file():
     if not is_string_dtype(s['force.field']):
         print("## ERROR: force.field column has to be a string.")
         return False
-        
+
+    ttypes = list(set(s['target.type']))
+    for tt in ttypes:
+        if tt not in ['arc','point']:
+            print("## ERROR: unknown target type {}, has to be arc or point even according to Indian standards.".format(tt))
+            return False
+            
+
     # I don't trust pandas so I prefer a simple data structure, list of dicts            
     schedule = []
     for i,row in s.iterrows():

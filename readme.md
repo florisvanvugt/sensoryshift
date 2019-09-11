@@ -41,6 +41,7 @@ In the schedule file, there are various columns:
    * `mov.direction`: the physical angle at which the subject hand will be moved (again, not affected by rotation)
    * `cursor.rotation`: the angle by which the visual cursor is rotated (where 0 rotation means the cursor follows the physical hand position). set this to `NA` if you want there to be no cursor.
    * `force.field`: only meaningful for active trials, the possible values are `none`=null field, `curl`=curl force field, `channel`=force channel trial.
+   * `target.type`: has to be `arc` or `point`, and I guess what that does is fairly obvious
 
 To do visual no-feedback trials, simply set the `cursor.rotation` field to NA.
 
@@ -94,15 +95,17 @@ udevadm info {device}
 
 We also implement a recognition task, where the subject passively feels two directions (A and B) and then is asked which is most similar to their own movement (on a previous day).
 
-For this, press the `Recognition` button, which will prompt you to open a recognition schedule CSV file. An example schedule is:
+For this, press the `Recognition` button, which will prompt you to open a recognition schedule CSV file.
 
-```
-trial,directionA,directionB
-1,5,10
-2,-5,5
-```
+This CSV should have the following columns:
 
-The directions are given in degrees as in the rest of the case.
+* `trial` - the number of the trial
+* `direction` - which direction (in degrees) we will move to
+* `type` - just a label that we don't actually use, but hey, why not have extra columns that do nothing?
+* `target_direction` - the direction in which to display the visual target (because it can be different from the actual physical movement direction)
+
+
+The directions are given in degrees as in the rest of the case relative to straight ahead, counter-clockwise.
 
 
 
