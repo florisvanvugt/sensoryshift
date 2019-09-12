@@ -1587,7 +1587,7 @@ def mainloopmotorcopy():
             if robot.move_is_done(): # if we are back at the starting point
                 robot.stay()
                 next_phase('pause')
-                trialdata['pause.until.t']=trialdata['t.absolute']+conf['pause_duration']
+                trialdata['pause.until.t']=trialdata['t.absolute']+conf['recog_pause_duration']
 
         if phase_is('pause'):
             if trialdata['t.absolute']>trialdata.get('pause.until.t',0): # if the hold time is expired
