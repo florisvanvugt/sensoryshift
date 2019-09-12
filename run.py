@@ -807,7 +807,7 @@ def in_start_zone(trialdata):
 
     # Compute how far we are from the starting zone
     dstart = np.sqrt(pow(conf['robot_center_x']-trialdata['robot_x'],2)+pow(conf['robot_center_y']-trialdata['robot_y'],2))
-    return dstart<conf['center_marker_radius']
+    return dstart<.5*conf['center_marker_radius']
     
 
 
