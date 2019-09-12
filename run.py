@@ -746,6 +746,7 @@ def recognition_review(trialdata,hist):
 
 
     
+    
 
 
 def get_target_colour():
@@ -1487,9 +1488,10 @@ def start_motor_copy_trial():
     trialdata['schedule.number'] =trialdata['current_schedule']
     trialdata['trial']           =sched['trial'] # trial number
     trialdata['type']            =sched['type']
-    trialdata['direction']       =sched['direction']         # where subjects will be moved passivly
+    trialdata['movement.direction']=sched['direction']         # where subjects will be moved passivly
+    trialdata['movement.position'] =position_from_angle(conv_ang(sched['direction'])) # where subjects will be moved passively
     trialdata['target.direction']=sched['target.direction']  # display angle of the target
-    trialdata['target_position'] =position_from_angle(conv_ang(sched['target.direction']))  # display angle of the target
+    trialdata['target.position'] =position_from_angle(conv_ang(sched['target.direction']))  # display angle of the target
     trialdata['movement_position']=None
     trialdata['force.field']     ='none'
     trialdata['captured']        =[] # nothing captured
@@ -1499,9 +1501,9 @@ def start_motor_copy_trial():
     for v in ['vmax_x','vmax_y','final_x','final_y']:
         trialdata[v]=None
 
-    trialinfo =  "trial %d %s   "%(trialdata['trial'],trialdata['type'])
-    trialinfo += ("targ: %.2f \n"%(trialdata['target.direction']))
-    print('\n\n\n### MOTOR COPY %d %s ####'%(trialdata['trial'],trialdata['type']))
+    #trialinfo =  "trial %d %s   "%(trialdata['trial'],trialdata['type'])
+    trialinfo = ("targ: %.2f \n"%(trialdata['movement.direction']))
+    print('\n\n\n### MOTOR COPY TRIAL %d TYPE %s ####'%(trialdata['trial'],trialdata['type']))
     print(trialinfo)
     gui['trialinfo'].set(trialinfo)
     robot.wshm('fvv_trial_no',     trialdata['trial'])
@@ -1580,12 +1582,6 @@ def mainloopmotorcopy():
                     
         if phase_is('backward'):
             if robot.move_is_done():
-
-                # Now prepare for the subject's active movement, and fade the forces
-                # Determine the angle of the display target
-                angle = conv_ang(schedule['target.direction'])
-                trialdata['target.display.angle']=angle
-                trialdata['target_position']=position_from_angle(angle)
                 
                 hold_fade()
                 robot.background_capture()
@@ -1595,7 +1591,7 @@ def mainloopmotorcopy():
                 trialdata['hold.until.t']=trialdata['t.absolute']+conf['fade_duration']
                 
                 if DEBUG: # in the debug mode, we will simulate a subject's movement (because we are not connected to the physical robot)
-                    x,y=trialdata['target_position']
+                    x,y=trialdata['target.position']
                     robot.preprogram_move_to(x,y,1.5)
                     robot.future.append({"fvv_max_vel":.46}) # send a max_vel value for testing
                     robot.future.append({"fvv_move_done":1}) # this will happen in the future when the entire trajectory has finished
@@ -1630,7 +1626,7 @@ def mainloopmotorcopy():
                 
 
         if phase_is('completed'):
-            ## review_plot() TODO maybe make motor copy review plot
+            motorcopy_review_plot()
             ## write_logs() TODO this has to be done but for motor copy
             start_motor_copy_trial()
             
@@ -1648,14 +1644,12 @@ def mainloopmotorcopy():
             draw_ball(conf['screen'],conf['robot_center'],conf['center_marker_radius'],conf['center_marker_colour'])
 
             # Draw the target
-            if 'target_position' in trialdata: # We show a target always, only not if this is a pinpoint trial
-
-                # Determine the colour
-                col = get_target_colour() if phase_is('hold') else conf['target_colour']
-
-                # Now draw the target.
-                # If we want to draw the target as an arc...
-                draw_arc(conf['screen'],conf['movement_radius'],col)
+            ### Determine the colour
+            col = get_target_colour() if phase_is('hold') else conf['target_colour']
+            
+            ### Now draw the target.
+            ### If we want to draw the target as an arc...
+            draw_arc(conf['screen'],conf['movement_radius'],col)
                     
             # For debug only: show veridical robot position
             if DEBUG:
@@ -1677,7 +1671,7 @@ def mainloopmotorcopy():
                 trialdata['cursor_position']=(trialdata['robot_x'],trialdata['robot_y'])
                 _,trialdata['bar_distance']=visual_error_clamp( (trialdata['robot_x'],trialdata['robot_y']),
                                                                 conf['robot_center'],
-                                                                trialdata['target_position'] )
+                                                                trialdata['target.position'] )
 
                 # Now actually draw the cursor
                 cursor_is_arc = not in_start_zone(trialdata)
@@ -1699,6 +1693,58 @@ def mainloopmotorcopy():
 
 
 
+
+
+
+        
+def motorcopy_review_plot():
+    """ Make a plot of the passive movement and following active movement."""
+
+    plot = pygame.Surface(conf['screensize'])
+    plot.fill(conf['bgcolor'])
+
+    # Draw start position
+    cx,cy = conf['robot_center']
+    draw_ball(plot,(cx,cy),conf['center_marker_radius'],conf['center_marker_colour'])
+
+    # For reference, draw straight ahead as well
+    tpos =position_from_angle(conv_ang(0))
+    draw_ball(plot,tpos,conf['center_marker_radius'],conf['center_marker_colour'])
+
+    # Draw the movement direction
+    #colors = {'A':(255,0,0),'B':(0,255,0)}
+    col = (255,255,0)
+    pos = trialdata['movement.position']
+    points = [ robot_to_screen(x,y,conf) for (x,y) in [(cx,cy),pos]]
+    pygame.draw.lines(plot,col,False,points,3)
+    draw_ball(plot,pos,conf['target_radius'],col)
+
+    # Draw the subject movement
+    if 'captured' in trialdata and len(trialdata['captured'])>0: # if there is actually something captured
+
+        traj = [ (x,y,fx,fy,fz) for (x,y,fx,fy,fz) in trialdata['captured'] ] # make a copy, which seems to be a good idea here
+        if len(traj)==0:
+            print("Captured 0 samples")
+            return
+        # Just resample a little bit, so that the drawing will consume less resources
+
+        #print(traj)
+        traj = traj[ ::10 ]
+
+        # Draw the forces also (how cool is that)
+        for (x,y,fx,fy,_) in traj[::3]: # further subsampling also
+            sx,sy = robot_to_screen(x,y,conf)
+            tx,ty = robot_to_screen(x+conf['review_force_scale']*fx,
+                                    y+conf['review_force_scale']*fy,
+                                    conf)
+            pygame.draw.line(plot,conf['review_force_colour'],(sx,sy),(tx,ty),conf['review_force_width'])
+
+        # Draw the actual positions
+        points = [ robot_to_screen(x,y,conf) for x,y,_,_,_ in traj ]
+        if len(points):
+            pygame.draw.lines(plot,conf['review_trajectory_colour'],False,points,conf['review_linewidth'])
+
+    show_review(plot,trialdata)
 
 
 
