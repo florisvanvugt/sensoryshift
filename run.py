@@ -1428,15 +1428,32 @@ def runmotorcopy():
         os.makedirs(basedir)
     timestamp = datetime.datetime.now().strftime("%d_%m.%Hh%Mm%S")
     basename = '%s/%s_%s_%s'%(basedir,conf['participant'],EXPERIMENT,timestamp)
-    jsonf = basename+"motorcopy.json" # where we will save the data
-    trialdata['basename']=basename
-    trialdata['jsonf']=jsonf
+    jsonf    = basename+"motorcopy.json"      # where we will save the data
+    capturef = basename+"trajectory.pickle" # where we will save the data
+    conf['basename']       = basename
+    conf['jsonf']          = jsonf
+    conf['capturef']       = capturef
+    conf['trialhistory']   = []
+    conf['capturehistory'] = []
+    motor_copy_json_log()
+    motor_copy_capture_log()
 
     trialdata['current_schedule']=-1 # start at the beginning
     trialdata['phase']='init'
 
     gui['progress']['maximum'] =len(trialdata['schedule'])
     gui['progress']['value']   =0
+
+
+    # Open the logs
+    trajlog = '%strajectory.bin'%basename
+    robot.start_log(trajlog,conf['N_ROBOT_LOG'])
+    gui["logging"]=True
+
+    triallog = '%strials.txt'%basename
+    conf['triallog'] = open(triallog,'w')
+    conf['triallog'].write(trial_header())
+
     
     # Let's go!
     print("Launching motor copy test: {} trials.".format(len(schedule)))
@@ -1452,6 +1469,21 @@ def runmotorcopy():
         
 
 
+
+
+def motor_copy_json_log():
+    # Write the JSON log for the motor copy test
+    with open(conf['jsonf'],'w') as f:
+        json.dump(conf['trialhistory'],f)
+
+
+
+def motor_copy_capture_log():
+    # Write the (pickle) log for the motor copy test, the log that tracks the captured data
+    with open(conf['capturef'],'wb') as f:
+        pickle.dump(conf['capturehistory'],f)
+    
+        
 
 
 def start_motor_copy_trial():
@@ -1472,7 +1504,8 @@ def start_motor_copy_trial():
         gui['keep_going'] = False # this will bail out of the main loop
         gui['running'] = False
         time.sleep(1) # wait until some last commands may have stopped
-        close_logs()
+        robot.stop_log()
+        gui["logging"]=False
         update_ui()
         # Now ask the experimenter for observations
         #obsv = tksd.askstring('Please record any observations', 'Experimenter, please write down any observations.\nAny irregularities?\nDid the subject seem concentrated or not?\nWere things unclear or clear?\nAnything else that is worth noting?')
@@ -1627,7 +1660,25 @@ def mainloopmotorcopy():
 
         if phase_is('completed'):
             motorcopy_review_plot()
+
+            # Write the log
+            thistrial = {}
+            for col in ['trial','movement.direction','movement.position','target.direction','target.position','type','timestamp','vmax_x','vmax_y','final_x','final_y']:
+                thistrial[col] = trialdata[col]
+            conf['trialhistory'].append(thistrial)
+            motor_copy_json_log()
+
+            # Write the captured trajectory log
+            capt = {'trial'     :trialdata['trial'],
+                    'timestamp' :trialdata['timestamp'],
+                    'direction' :trialdata['movement.direction'],
+                    'captured'  :list(trialdata['captured'])}
+            conf['capturehistory'].append(capt)
+            motor_copy_capture_log()
+            
             ## write_logs() TODO this has to be done but for motor copy
+
+            ## launch the next trial
             start_motor_copy_trial()
             
         
