@@ -155,7 +155,7 @@ conf['selector_width']=4 # the width of the selector (in pixels)
 conf['return_duration']=1.5 # seconds
 
 # How long to take for the passive movements
-conf['passive_duration']=1.5 # seconds
+conf['passive_duration']=1.0 # seconds
 
 conf['stay_duration']=1 # how long to stay "out there" in between forward and backward movement
 
@@ -1427,7 +1427,7 @@ def runmotorcopy():
     if not os.path.exists(basedir):
         os.makedirs(basedir)
     timestamp = datetime.datetime.now().strftime("%d_%m.%Hh%Mm%S")
-    basename = '%s/%s_%s_%s'%(basedir,conf['participant'],EXPERIMENT,timestamp)
+    basename = '%s/%s_%s_%s--motorcopy--'%(basedir,conf['participant'],EXPERIMENT,timestamp)
     jsonf    = basename+"motorcopy.json"      # where we will save the data
     capturef = basename+"trajectory.pickle" # where we will save the data
     conf['basename']       = basename
