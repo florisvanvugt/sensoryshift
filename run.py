@@ -1201,7 +1201,8 @@ def trial_log():
 
 def close_logs():
     if gui["logging"]:
-        conf['triallog'].close()
+        if 'triallog' in conf:
+            conf['triallog'].close()
         robot.stop_log()
     gui["logging"]=False
 
@@ -1378,7 +1379,16 @@ def runrecog():
         
 
 
-
+class NpEncoder(json.JSONEncoder):
+    def default(self, obj):
+        if isinstance(obj, np.integer):
+            return int(obj)
+        elif isinstance(obj, np.floating):
+            return float(obj)
+        elif isinstance(obj, np.ndarray):
+            return obj.tolist()
+        else:
+            return super(NpEncoder, self).default(obj)
 
 
 
@@ -1414,6 +1424,7 @@ def runmotorcopy():
     schedule = []
     for i,row in s.iterrows():
         row = dict(row)
+        row['type']=str(row['type'])
         schedule.append(row)
     trialdata['schedule']=schedule
 
@@ -1428,8 +1439,8 @@ def runmotorcopy():
         os.makedirs(basedir)
     timestamp = datetime.datetime.now().strftime("%d_%m.%Hh%Mm%S")
     basename = '%s/%s_%s_%s--motorcopy--'%(basedir,conf['participant'],EXPERIMENT,timestamp)
-    jsonf    = basename+"motorcopy.json"      # where we will save the data
-    capturef = basename+"trajectory.pickle" # where we will save the data
+    jsonf    = basename+"parameters.json"   # where we will save the data
+    capturef = basename+"dump.pickle"       # where we will save the data
     conf['basename']       = basename
     conf['jsonf']          = jsonf
     conf['capturef']       = capturef
@@ -1450,10 +1461,6 @@ def runmotorcopy():
     robot.start_log(trajlog,conf['N_ROBOT_LOG'])
     gui["logging"]=True
 
-    triallog = '%strials.txt'%basename
-    conf['triallog'] = open(triallog,'w')
-    conf['triallog'].write(trial_header())
-
     
     # Let's go!
     print("Launching motor copy test: {} trials.".format(len(schedule)))
@@ -1473,11 +1480,13 @@ def runmotorcopy():
 
 def motor_copy_json_log():
     # Write the JSON log for the motor copy test
-    with open(conf['jsonf'],'w') as f:
-        json.dump({
+    dat = {
             'robot_center':(conf['robot_center_x'],conf['robot_center_y']),
             'schedule':conf['trialhistory']
-        },f)
+        }
+    print(dat)
+    with open(conf['jsonf'],'w') as f:
+        json.dump(dat,f,cls=NpEncoder)
 
 
 
