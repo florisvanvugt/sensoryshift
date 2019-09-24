@@ -1474,7 +1474,10 @@ def runmotorcopy():
 def motor_copy_json_log():
     # Write the JSON log for the motor copy test
     with open(conf['jsonf'],'w') as f:
-        json.dump(conf['trialhistory'],f)
+        json.dump({
+            'robot_center':(conf['robot_center_x'],conf['robot_center_y']),
+            'schedule':conf['trialhistory']
+        },f)
 
 
 
