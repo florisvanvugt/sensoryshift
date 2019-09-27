@@ -1484,7 +1484,7 @@ def motor_copy_json_log():
             'robot_center':(conf['robot_center_x'],conf['robot_center_y']),
             'schedule':conf['trialhistory']
         }
-    print(dat)
+    #print(dat)
     with open(conf['jsonf'],'w') as f:
         json.dump(dat,f,cls=NpEncoder)
 
