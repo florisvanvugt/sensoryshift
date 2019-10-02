@@ -523,7 +523,7 @@ def start_new_trial():
 
 
     sched = current_schedule() # Retrieve the current schedule
-    print(sched)
+    #print(sched)
     trialdata['timestamp']       =time.time()
     trialdata['schedule.number'] =trialdata['current_schedule']
     trialdata['trial']           =sched['trial'] # trial number
