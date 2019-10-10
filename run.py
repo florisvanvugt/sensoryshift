@@ -80,7 +80,7 @@ conf['center_capture_period']=.01 # how long to wait between capturing samples f
 conf['fullscreen']=False
 
 # The background of the screen
-conf["bgcolor"] = (0,0,0)
+conf["bgcolor"] = (25,25,25) #(0,0,0)
 
 # The size of the window (for pygame)
 conf["screensize"] = (1920,1080) # inmotion screen
@@ -103,7 +103,7 @@ conf["cursor_radius"] = .0035 # in robot coordinates (m)
 
 # this is the display size of the target, not the size of the target area used for determining whether subjects are long enough "within" the target.
 conf["target_radius"] = .0075
-conf["target_colour"]  = (100,100,100)
+conf["target_colour"]  = (50,50,50) #(100,100,100)
 
 # These are the colours for the target, when the subject is too slow, too fast, or correct
 conf["target_slow_colour"]    =(0,0,255)
@@ -116,10 +116,10 @@ conf['too_fast_vmax']=.45
 
 # the marker for the center
 conf['center_marker_radius']=.0075
-conf['center_marker_colour']=(100,100,100)
+conf['center_marker_colour']= conf["target_colour"] #(50,50,50) #75,75,75) #(100,100,100)
 
 # The cursor colour
-conf["active_cursor_colour"]  = (0,255,0)
+conf["active_cursor_colour"]  = (25,90,25)  # (0,255,0)
 conf["passive_cursor_colour"] = (255,0,0)
 
 
